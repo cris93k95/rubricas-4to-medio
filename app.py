@@ -249,14 +249,40 @@ def auth_google_callback():
     if not user:
         # Auto-create admin if email matches
         if email == ADMIN_EMAIL and engine:
-            logger.info(f"Auto-creating admin user: {email}")
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO app_users (email, name, role)
-                    VALUES (:email, :name, 'admin')
-                    ON CONFLICT (email) DO NOTHING
-                """), {"email": email, "name": ADMIN_NAME})
-            user = get_user_by_email(email)
+            try:
+                logger.info(f"Auto-creating admin user: {email}")
+                with engine.begin() as conn:
+                    # Ensure tables exist
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS app_users (
+                            id SERIAL PRIMARY KEY,
+                            email TEXT NOT NULL UNIQUE,
+                            name TEXT NOT NULL,
+                            role TEXT NOT NULL,
+                            google_sub TEXT,
+                            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            last_login TIMESTAMP
+                        )
+                    """))
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS rubric_state (
+                            user_id INTEGER REFERENCES app_users(id) ON DELETE CASCADE,
+                            tool TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            PRIMARY KEY (user_id, tool)
+                        )
+                    """))
+                    conn.execute(text("""
+                        INSERT INTO app_users (email, name, role)
+                        VALUES (:email, :name, 'admin')
+                        ON CONFLICT (email) DO NOTHING
+                    """), {"email": email, "name": ADMIN_NAME})
+                user = get_user_by_email(email)
+                logger.info(f"Admin user created successfully: {user}")
+            except Exception as e:
+                logger.error(f"Failed to auto-create admin: {e}", exc_info=True)
+                return f"Error creando usuario admin: {e}", 500
         if not user:
             logger.warning(f"User NOT FOUND in DB: {email}. ADMIN_EMAIL={ADMIN_EMAIL}")
             return f"Usuario no autorizado ({email}).", 403

@@ -101,6 +101,7 @@ def init_database_if_needed() -> None:
         """))
         # Bootstrap admin user
         if ADMIN_EMAIL:
+            logger.info(f"Bootstrapping admin user: email={ADMIN_EMAIL}, name={ADMIN_NAME}")
             existing = conn.execute(
                 text("SELECT id FROM app_users WHERE email = :email"),
                 {"email": ADMIN_EMAIL},
@@ -110,11 +111,15 @@ def init_database_if_needed() -> None:
                     text("UPDATE app_users SET name = :name, role = 'admin' WHERE id = :id"),
                     {"id": existing[0], "name": ADMIN_NAME},
                 )
+                logger.info(f"Admin user updated (id={existing[0]})")
             else:
                 conn.execute(
                     text("INSERT INTO app_users (email, name, role) VALUES (:email, :name, 'admin')"),
                     {"email": ADMIN_EMAIL, "name": ADMIN_NAME},
                 )
+                logger.info("Admin user CREATED")
+        else:
+            logger.warning("ADMIN_EMAIL not set! No admin user will be created.")
 
 
 init_database_if_needed()
@@ -236,12 +241,14 @@ def auth_google_callback():
         return f"Error al autenticar con Google: {e}", 401
 
     email = normalize_email(user_info.get("email", ""))
+    logger.info(f"Google login attempt: email={email}")
     if not email:
         return "No se pudo obtener email de Google", 401
 
     user = get_user_by_email(email)
     if not user:
-        return "Usuario no autorizado. Contacta al administrador.", 403
+        logger.warning(f"User NOT FOUND in DB: {email}. ADMIN_EMAIL={ADMIN_EMAIL}")
+        return f"Usuario no autorizado ({email}). Email admin configurado: {ADMIN_EMAIL}", 403
 
     if engine:
         with engine.begin() as conn:

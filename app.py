@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import threading
 from functools import wraps
@@ -35,7 +36,10 @@ VALID_TOOLS = {"video", "cv"}
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = SECRET_KEY
+app.config['PREFERRED_URL_SCHEME'] = 'https'
 lock = threading.Lock()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 oauth = OAuth(app)
 google_oauth_enabled = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
@@ -209,7 +213,8 @@ def login():
 def auth_google():
     if not google_oauth_enabled:
         return "Google OAuth no configurado", 503
-    redirect_uri = url_for("auth_google_callback", _external=True)
+    redirect_uri = url_for("auth_google_callback", _external=True, _scheme='https')
+    logger.info(f"OAuth redirect URI: {redirect_uri}")
     return oauth.google.authorize_redirect(redirect_uri)
 
 
@@ -223,8 +228,9 @@ def auth_google_callback():
         if not user_info:
             resp = oauth.google.get("userinfo")
             user_info = resp.json()
-    except Exception:
-        return "Error al autenticar con Google", 401
+    except Exception as e:
+        logger.error(f"OAuth error: {e}", exc_info=True)
+        return f"Error al autenticar con Google: {e}", 401
 
     email = normalize_email(user_info.get("email", ""))
     if not email:

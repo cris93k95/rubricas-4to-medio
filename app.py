@@ -1,199 +1,410 @@
 """
-Servidor Flask para servir las rúbricas de evaluación de 4° Medio.
-Sirve los archivos HTML estáticos como páginas web con una landing page de navegación.
+Rúbricas 4° Medio — Flask Backend
+Evaluación Mock Job Interview (Video) + Curriculum Vitae
+Persistencia en PostgreSQL · Autenticación Google OAuth
 """
+from __future__ import annotations
+
+import io
+import json
 import os
-from flask import Flask, send_from_directory, render_template_string
+import threading
+from functools import wraps
+from pathlib import Path
 
-app = Flask(__name__, static_folder="static")
+from authlib.integrations.flask_client import OAuth
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
+from openpyxl import load_workbook
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
-LANDING_PAGE = """
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rúbricas 4° Medio — Inglés TP 2026</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Inter', sans-serif;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #334155 100%);
-            color: #f1f5f9;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 2rem;
-        }
-        .container {
-            max-width: 700px;
-            width: 100%;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 3rem;
-        }
-        .header h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #60a5fa, #34d399);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 0.5rem;
-        }
-        .header p {
-            color: #94a3b8;
-            font-size: 1.1rem;
-        }
-        .header .subtitle {
-            color: #64748b;
-            font-size: 0.9rem;
-            margin-top: 0.25rem;
-        }
-        .card {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 1rem;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: block;
-            position: relative;
-            overflow: hidden;
-        }
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            border-radius: 1rem 1rem 0 0;
-        }
-        .card-video::before {
-            background: linear-gradient(90deg, #3b82f6, #6366f1);
-        }
-        .card-cv::before {
-            background: linear-gradient(90deg, #14b8a6, #10b981);
-        }
-        .card:hover {
-            background: rgba(255,255,255,0.1);
-            border-color: rgba(255,255,255,0.2);
-            transform: translateY(-4px);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-        }
-        .card-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-        }
-        .card h2 {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #f1f5f9;
-            margin-bottom: 0.5rem;
-        }
-        .card p {
-            color: #94a3b8;
-            font-size: 0.9rem;
-            line-height: 1.6;
-        }
-        .card .badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-top: 1rem;
-        }
-        .badge-video {
-            background: rgba(99, 102, 241, 0.2);
-            color: #818cf8;
-            border: 1px solid rgba(99, 102, 241, 0.3);
-        }
-        .badge-cv {
-            background: rgba(20, 184, 166, 0.2);
-            color: #5eead4;
-            border: 1px solid rgba(20, 184, 166, 0.3);
-        }
-        .card .arrow {
-            position: absolute;
-            right: 2rem;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 1.5rem;
-            color: #475569;
-            transition: all 0.3s ease;
-        }
-        .card:hover .arrow {
-            color: #94a3b8;
-            transform: translateY(-50%) translateX(4px);
-        }
-        .footer {
-            text-align: center;
-            margin-top: 2rem;
-            color: #475569;
-            font-size: 0.8rem;
-        }
-        @media (max-width: 640px) {
-            .header h1 { font-size: 1.8rem; }
-            .card { padding: 1.5rem; }
-            .card .arrow { display: none; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📋 Rúbricas 4° Medio</h1>
-            <p>Herramientas de Evaluación — Inglés TP 2026</p>
-            <p class="subtitle">Unidad 1: Professional Profile & Workplace English</p>
-        </div>
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+SECRET_KEY = os.getenv("SECRET_KEY", "rubricas-dev-key-change-in-production")
 
-        <a href="/video" class="card card-video">
-            <div class="card-icon">🎬</div>
-            <h2>Mock Job Interview — Video</h2>
-            <p>Rúbrica para evaluar la entrevista laboral simulada en parejas, presentada en formato de video. Evalúa pronunciación, fluidez, vocabulario técnico, contenido, rol del entrevistador y producción.</p>
-            <span class="badge badge-video">7 criterios · 28 pts · En parejas</span>
-            <span class="arrow">→</span>
-        </a>
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+GOOGLE_CLIENT_SECRET = (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
-        <a href="/cv" class="card card-cv">
-            <div class="card-icon">📄</div>
-            <h2>Curriculum Vitae en Inglés</h2>
-            <p>Rúbrica para evaluar el CV profesional en inglés de cada estudiante. Evalúa estructura, gramática, vocabulario técnico, relevancia del contenido y presentación profesional.</p>
-            <span class="badge badge-cv">6 criterios · 24 pts · Individual</span>
-            <span class="arrow">→</span>
-        </a>
+ADMIN_EMAIL = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
+ADMIN_NAME = (os.getenv("ADMIN_NAME") or "Administrador").strip()
 
-        <div class="footer">
-            <p>Liceo Técnico Profesional · Inglés 4° Medio · 2026</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
+VALID_TOOLS = {"video", "cv"}
 
+app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+app.secret_key = SECRET_KEY
+lock = threading.Lock()
+
+oauth = OAuth(app)
+google_oauth_enabled = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+if google_oauth_enabled:
+    oauth.register(
+        name="google",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url=GOOGLE_DISCOVERY_URL,
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+
+# ─── Database ───────────────────────────────────────────────────────────────
+
+def normalize_database_url(raw_url: str) -> str:
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql+psycopg://", 1)
+    if raw_url.startswith("postgresql://") and "+" not in raw_url.split("://", 1)[0]:
+        return raw_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return raw_url
+
+
+engine: Engine | None = None
+if DATABASE_URL:
+    engine = create_engine(normalize_database_url(DATABASE_URL), pool_pre_ping=True, future=True)
+
+
+def default_state() -> dict:
+    return {"courses": {}}
+
+
+def init_database_if_needed() -> None:
+    if not engine:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS app_users (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                google_sub TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS rubric_state (
+                user_id INTEGER REFERENCES app_users(id) ON DELETE CASCADE,
+                tool TEXT NOT NULL,
+                data TEXT NOT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, tool)
+            )
+        """))
+        # Bootstrap admin user
+        if ADMIN_EMAIL:
+            existing = conn.execute(
+                text("SELECT id FROM app_users WHERE email = :email"),
+                {"email": ADMIN_EMAIL},
+            ).first()
+            if existing:
+                conn.execute(
+                    text("UPDATE app_users SET name = :name, role = 'admin' WHERE id = :id"),
+                    {"id": existing[0], "name": ADMIN_NAME},
+                )
+            else:
+                conn.execute(
+                    text("INSERT INTO app_users (email, name, role) VALUES (:email, :name, 'admin')"),
+                    {"email": ADMIN_EMAIL, "name": ADMIN_NAME},
+                )
+
+
+init_database_if_needed()
+
+
+# ─── State Management ────────────────────────────────────────────────────────
+
+def load_state(user_id: int, tool: str) -> dict:
+    if engine:
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text("SELECT data FROM rubric_state WHERE user_id = :uid AND tool = :tool"),
+                    {"uid": user_id, "tool": tool},
+                ).first()
+                if row and row[0]:
+                    return json.loads(row[0])
+        except Exception:
+            pass
+    return default_state()
+
+
+def save_state(user_id: int, tool: str, state: dict) -> None:
+    if engine:
+        payload = json.dumps(state, ensure_ascii=False)
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO rubric_state (user_id, tool, data, updated_at)
+                VALUES (:uid, :tool, :data, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, tool)
+                DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
+            """), {"uid": user_id, "tool": tool, "data": payload})
+
+
+# ─── Auth Helpers ─────────────────────────────────────────────────────────────
+
+def normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    if not engine:
+        return None
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT id, email, name, role FROM app_users WHERE id = :id"),
+            {"id": user_id},
+        ).first()
+    if not row:
+        return None
+    return {"id": int(row[0]), "email": row[1], "name": row[2], "role": row[3]}
+
+
+def get_user_by_email(email: str) -> dict | None:
+    if not engine:
+        return None
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT id, email, name, role FROM app_users WHERE email = :email"),
+            {"email": normalize_email(email)},
+        ).first()
+    if not row:
+        return None
+    return {"id": int(row[0]), "email": row[1], "name": row[2], "role": row[3]}
+
+
+def get_current_user() -> dict | None:
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    try:
+        return get_user_by_id(int(user_id))
+    except Exception:
+        return None
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not get_current_user():
+            if request.path.startswith("/api"):
+                return jsonify({"error": "No autenticado"}), 401
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+# ─── Auth Routes ──────────────────────────────────────────────────────────────
+
+@app.route("/login")
+def login():
+    user = get_current_user()
+    if user:
+        return redirect(url_for("landing"))
+    return render_template("login.html", google_enabled=google_oauth_enabled)
+
+
+@app.route("/auth/google")
+def auth_google():
+    if not google_oauth_enabled:
+        return "Google OAuth no configurado", 503
+    redirect_uri = url_for("auth_google_callback", _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def auth_google_callback():
+    if not google_oauth_enabled:
+        return "Google OAuth no configurado", 503
+    try:
+        token = oauth.google.authorize_access_token()
+        user_info = token.get("userinfo")
+        if not user_info:
+            resp = oauth.google.get("userinfo")
+            user_info = resp.json()
+    except Exception:
+        return "Error al autenticar con Google", 401
+
+    email = normalize_email(user_info.get("email", ""))
+    if not email:
+        return "No se pudo obtener email de Google", 401
+
+    user = get_user_by_email(email)
+    if not user:
+        return "Usuario no autorizado. Contacta al administrador.", 403
+
+    if engine:
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE app_users SET google_sub = :sub, last_login = CURRENT_TIMESTAMP WHERE id = :id"),
+                {"id": user["id"], "sub": user_info.get("sub")},
+            )
+
+    session["user_id"] = int(user["id"])
+    return redirect(url_for("landing"))
+
+
+@app.route("/logout")
+def logout():
+    session.pop("user_id", None)
+    return redirect(url_for("login"))
+
+
+# ─── Page Routes ──────────────────────────────────────────────────────────────
 
 @app.route("/")
+@login_required
 def landing():
-    return render_template_string(LANDING_PAGE)
+    return render_template("landing.html", current_user=get_current_user())
 
 
 @app.route("/video")
-def video_rubric():
-    return send_from_directory("static", "rubrica_video.html")
+@login_required
+def video_page():
+    return render_template("video.html", current_user=get_current_user())
 
 
 @app.route("/cv")
-def cv_rubric():
-    return send_from_directory("static", "rubrica_cv.html")
+@login_required
+def cv_page():
+    return render_template("cv.html", current_user=get_current_user())
 
+
+# ─── API: State ───────────────────────────────────────────────────────────────
+
+@app.route("/api/state/<tool>", methods=["GET"])
+@login_required
+def api_get_state(tool: str):
+    if tool not in VALID_TOOLS:
+        return jsonify({"error": "Herramienta no válida"}), 400
+    user = get_current_user()
+    with lock:
+        state = load_state(int(user["id"]), tool)
+    return jsonify(state)
+
+
+@app.route("/api/state/<tool>", methods=["PUT"])
+@login_required
+def api_save_state(tool: str):
+    if tool not in VALID_TOOLS:
+        return jsonify({"error": "Herramienta no válida"}), 400
+    user = get_current_user()
+    payload = request.get_json(force=True)
+    with lock:
+        save_state(int(user["id"]), tool, payload)
+    return jsonify({"ok": True})
+
+
+# ─── API: Excel Upload ───────────────────────────────────────────────────────
+
+@app.route("/api/<tool>/upload-excel/<course_name>", methods=["POST"])
+@login_required
+def api_upload_excel(tool: str, course_name: str):
+    if tool not in VALID_TOOLS:
+        return jsonify({"error": "Herramienta no válida"}), 400
+    
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "Archivo requerido"}), 400
+
+    try:
+        wb = load_workbook(filename=io.BytesIO(file.read()), data_only=True)
+        ws = wb[wb.sheetnames[0]]
+        names = []
+        for row in ws.iter_rows(min_row=1, max_col=1):
+            value = row[0].value
+            if value is not None:
+                n = str(value).strip()
+                if n:
+                    names.append(n)
+    except Exception as e:
+        return jsonify({"error": f"Error al leer archivo: {e}"}), 400
+
+    user = get_current_user()
+    with lock:
+        state = load_state(int(user["id"]), tool)
+        courses = state.get("courses", {})
+        
+        if course_name not in courses:
+            return jsonify({"error": "Curso no encontrado"}), 404
+
+        added = 0
+        if tool == "video":
+            # Add to roster
+            roster = courses[course_name].get("roster", [])
+            for n in names:
+                if n not in roster:
+                    roster.append(n)
+                    added += 1
+            courses[course_name]["roster"] = roster
+        elif tool == "cv":
+            # Add as students
+            existing = {s.get("name") for s in courses[course_name].get("students", [])}
+            import time
+            for n in names:
+                if n not in existing:
+                    courses[course_name]["students"].append({
+                        "id": int(time.time() * 1000) + added,
+                        "name": n,
+                        "scores": {},
+                        "feedback": "",
+                        "isOpen": False
+                    })
+                    existing.add(n)
+                    added += 1
+
+        state["courses"] = courses
+        save_state(int(user["id"]), tool, state)
+
+    return jsonify({"ok": True, "added": added})
+
+
+# ─── API: Export / Import ─────────────────────────────────────────────────────
+
+@app.route("/api/export", methods=["GET"])
+@login_required
+def api_export():
+    user = get_current_user()
+    with lock:
+        video_state = load_state(int(user["id"]), "video")
+        cv_state = load_state(int(user["id"]), "cv")
+    
+    export_data = {"video": video_state, "cv": cv_state}
+    payload = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
+    
+    from datetime import datetime
+    return send_file(
+        io.BytesIO(payload),
+        as_attachment=True,
+        download_name=f"respaldo_rubricas_4to_{datetime.now().date()}.json",
+        mimetype="application/json",
+    )
+
+
+@app.route("/api/import", methods=["POST"])
+@login_required
+def api_import():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "Archivo requerido"}), 400
+    try:
+        imported = json.loads(file.read().decode("utf-8"))
+    except Exception:
+        return jsonify({"error": "JSON inválido"}), 400
+
+    user = get_current_user()
+    with lock:
+        if "video" in imported:
+            save_state(int(user["id"]), "video", imported["video"])
+        if "cv" in imported:
+            save_state(int(user["id"]), "cv", imported["cv"])
+    return jsonify({"ok": True})
+
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    port = int(os.getenv("PORT", "5000"))
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=port, debug=debug)

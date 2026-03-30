@@ -247,8 +247,19 @@ def auth_google_callback():
 
     user = get_user_by_email(email)
     if not user:
-        logger.warning(f"User NOT FOUND in DB: {email}. ADMIN_EMAIL={ADMIN_EMAIL}")
-        return f"Usuario no autorizado ({email}). Email admin configurado: {ADMIN_EMAIL}", 403
+        # Auto-create admin if email matches
+        if email == ADMIN_EMAIL and engine:
+            logger.info(f"Auto-creating admin user: {email}")
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO app_users (email, name, role)
+                    VALUES (:email, :name, 'admin')
+                    ON CONFLICT (email) DO NOTHING
+                """), {"email": email, "name": ADMIN_NAME})
+            user = get_user_by_email(email)
+        if not user:
+            logger.warning(f"User NOT FOUND in DB: {email}. ADMIN_EMAIL={ADMIN_EMAIL}")
+            return f"Usuario no autorizado ({email}).", 403
 
     if engine:
         with engine.begin() as conn:

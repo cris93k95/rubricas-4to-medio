@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Herramienta de Evaluación: Mock Job Interview (Video)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .rubric-table th, .rubric-table td {
+            border: 1px solid #cbd5e1;
+            padding: 0.75rem;
+            text-align: left;
+            vertical-align: top;
+        }
+        .rubric-table th:first-child {
+            width: 20%;
+        }
+        .score-cell {
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }
+        .score-cell:hover {
+            background-color: #e2e8f0;
+            opacity: 1 !important;
+        }
+        .unselected-sibling {
+            opacity: 0.4;
+        }
+        .selected {
+            color: white;
+            font-weight: 600;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            opacity: 1;
+        }
+        .selected.score-4 { background-color: #16a34a; }
+        .selected.score-3 { background-color: #2563eb; }
+        .selected.score-2 { background-color: #f59e0b; }
+        .selected.score-1 { background-color: #dc2626; }
+        
+        .pair-card {
+            scroll-margin-top: 20px;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out;
+        }
+        .is-open .collapsible-content {
+            max-height: 3000px;
+        }
+        .header-icon {
+            transition: transform 0.3s ease-in-out;
+        }
+        .is-open .header-icon {
+            transform: rotate(90deg);
+        }
+
+        .role-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .role-interviewer {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .role-interviewee {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .top-gradient {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
+        }
+
+        @media print {
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <div class="top-gradient text-white py-8 px-6 rounded-2xl shadow-lg mb-4">
+                <h1 class="text-3xl sm:text-4xl font-bold">🎬 Mock Job Interview — Video</h1>
+                <p class="mt-2 text-lg text-slate-300">4° Medio — Evaluación Sumativa — Nota 1 Semestre 1</p>
+                <p class="mt-1 text-sm text-slate-400">Unidad 1: Professional Profile & Workplace English</p>
+            </div>
+            <p class="text-slate-600 text-sm">Organiza tus evaluaciones por curso. El progreso se guarda automáticamente en tu navegador.</p>
+        </header>
+
+        <div class="mb-8 p-4 bg-white rounded-lg shadow-md flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4 no-print">
+            <button id="addCourseBtn" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm w-full sm:w-auto">
+                + Agregar Curso
+            </button>
+            <button id="exportBtn" class="bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm w-full sm:w-auto">
+                💾 Exportar Datos
+            </button>
+            <label class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto cursor-pointer text-center">
+                📂 Importar Datos<input type="file" id="importInput" accept=".json" class="hidden">
+            </label>
+            <button id="clearDataBtn" class="bg-red-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-red-700 transition-colors shadow-sm w-full sm:w-auto">
+                Limpiar Todos los Datos
+            </button>
+        </div>
+
+        <!-- Instrucciones colapsables -->
+        <div class="mb-8 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden no-print">
+            <button id="toggleInstructions" class="w-full flex items-center justify-between p-4 text-left hover:bg-amber-100 transition-colors">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xl">📋</span>
+                    <span class="font-semibold text-amber-800">Instrucciones de la Evaluación (clic para expandir)</span>
+                </div>
+                <span id="instructionsIcon" class="text-amber-600 text-xl font-bold transition-transform duration-300">▶</span>
+            </button>
+            <div id="instructionsContent" class="px-6 pb-4 hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-amber-900">
+                    <div>
+                        <h4 class="font-bold mb-2">📹 Formato de la Evaluación:</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>Trabajo <strong>en parejas</strong>: un estudiante es el <strong>entrevistador</strong> y el otro es el <strong>entrevistado</strong>.</li>
+                            <li>Deben grabar la entrevista simulada en formato de <strong>video</strong>.</li>
+                            <li>La entrevista debe incluir al menos <strong>4 preguntas</strong> (2 generales + 2 técnicas).</li>
+                            <li>Duración del video: aproximadamente <strong>5 minutos</strong>.</li>
+                            <li>El entrevistado puede usar su <strong>CV como apoyo</strong>.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-bold mb-2">📊 Criterios Evaluados (7 × 4 pts = 28 pts):</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>C1:</strong> Pronunciation & Intonation</li>
+                            <li><strong>C2:</strong> Fluency & Confidence</li>
+                            <li><strong>C3:</strong> Use of Technical Vocabulary</li>
+                            <li><strong>C4:</strong> Content & Coherence of Responses</li>
+                            <li><strong>C5:</strong> Interviewer Performance</li>
+                            <li><strong>C6:</strong> Video Production Quality</li>
+                            <li><strong>C7:</strong> Puntualidad en la Entrega</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="coursesContainer" class="space-y-12">
+        </div>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+        const coursesContainer = document.getElementById('coursesContainer');
+        const addCourseBtn = document.getElementById('addCourseBtn');
+        const clearDataBtn = document.getElementById('clearDataBtn');
+        let coursesData = {};
+        const STORAGE_KEY = 'eval4toMedio_MockInterview_Video_v1';
+
+        // Toggle instructions
+        document.getElementById('toggleInstructions').addEventListener('click', () => {
+            const content = document.getElementById('instructionsContent');
+            const icon = document.getElementById('instructionsIcon');
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
+        });
+
+        // Student database for 4to Medio courses
+        const studentDatabase = {
+            '4A': [],
+            '4B': [],
+            '4C': [],
+            '4E': []
+        };
+
+        const rubricStructure = [
+            { 
+                id: 'c1', 
+                name: 'Pronunciation & Intonation', 
+                descriptions: { 
+                    1: 'La pronunciación es muy deficiente, haciendo imposible entender el mensaje. No hay variación en la entonación.', 
+                    2: 'La pronunciación dificulta la comprensión. La entonación es monótona y poco natural para el contexto de entrevista.', 
+                    3: 'La pronunciación es mayormente clara y comprensible. La entonación es apropiada para una entrevista, aunque con errores ocasionales.', 
+                    4: 'La pronunciación es clara, precisa y natural. La entonación refleja profesionalismo y confianza, apropiada para el contexto laboral.' 
+                }
+            },
+            { 
+                id: 'c2', 
+                name: 'Fluency & Confidence', 
+                descriptions: { 
+                    1: 'El discurso es extremadamente lento, con pausas excesivas. No se percibe confianza ni naturalidad.', 
+                    2: 'El discurso es entrecortado, con pausas frecuentes y largas. Se nota inseguridad en las respuestas.', 
+                    3: 'Habla con fluidez razonable, con algunas pausas naturales. Se percibe preparación y confianza moderada.', 
+                    4: 'Habla con fluidez natural y seguridad. Demuestra confianza y profesionalismo consistente durante toda la entrevista.' 
+                }
+            },
+            { 
+                id: 'c3', 
+                name: 'Use of Technical Vocabulary', 
+                descriptions: { 
+                    1: 'No utiliza vocabulario técnico de su especialidad. Respuestas exclusivamente con vocabulario básico/general.', 
+                    2: 'Incluye 1-2 términos técnicos, pero con errores de uso o fuera de contexto. Vocabulario limitado.', 
+                    3: 'Utiliza vocabulario técnico de su especialidad de forma correcta y contextualizada (3-4 términos). Vocabulario adecuado.', 
+                    4: 'Demuestra dominio del vocabulario técnico de su especialidad (5+ términos). Lo integra naturalmente en respuestas coherentes y profesionales.' 
+                }
+            },
+            { 
+                id: 'c4', 
+                name: 'Content & Coherence of Responses', 
+                descriptions: { 
+                    1: 'Las respuestas son incoherentes, irrelevantes o limitadas a "sí/no". No responden lo que se pregunta.', 
+                    2: 'Las respuestas son breves y poco desarrolladas. Se intentan responder las preguntas pero falta profundidad y conexión.', 
+                    3: 'Las respuestas son coherentes, relevantes y están desarrolladas. Se conectan con la experiencia y metas profesionales del estudiante.', 
+                    4: 'Las respuestas son excelentes: coherentes, bien desarrolladas, persuasivas y demuestran reflexión sobre metas profesionales. Destacan por su calidad y autenticidad.' 
+                }
+            },
+            { 
+                id: 'c5', 
+                name: 'Interviewer Performance', 
+                descriptions: { 
+                    1: 'El entrevistador no cumple su rol: solo lee preguntas sin interacción, o las preguntas son incoherentes.', 
+                    2: 'El entrevistador lee las preguntas con poca naturalidad. No hay repreguntas ni interacción real. Se siente forzado.', 
+                    3: 'El entrevistador hace las preguntas con naturalidad y claridad. Incluye al menos 1 repregunta o comentario espontáneo. Buen manejo del rol.', 
+                    4: 'El entrevistador es excelente: formula preguntas claras, reacciona a las respuestas, hace repreguntas pertinentes y mantiene un tono profesional creíble durante toda la entrevista.' 
+                }
+            },
+            { 
+                id: 'c6', 
+                name: 'Video Production Quality', 
+                descriptions: { 
+                    1: 'Video inaudible o inentendible. Calidad de imagen/sonido inaceptable. Sin edición mínima.', 
+                    2: 'Calidad de video deficiente: problemas de audio, imagen o iluminación que dificultan la comprensión. Se percibe poco esfuerzo en la producción.', 
+                    3: 'Buena calidad de video: audio claro, imagen estable, iluminación adecuada. Se nota un esfuerzo de producción apropiado.', 
+                    4: 'Excelente calidad de producción: audio cristalino, imagen cuidada, buena iluminación, ambientación profesional. La producción eleva la calidad del trabajo significativamente.' 
+                }
+            },
+            { 
+                id: 'c7', 
+                name: 'Puntualidad en la Entrega', 
+                descriptions: { 
+                    1: 'Entregado con 3 o más clases de retraso.', 
+                    2: 'Entregado con 2 clases de retraso.', 
+                    3: 'Entregado con 1 clase de retraso.', 
+                    4: 'Entregado en la fecha y hora acordada.' 
+                }
+            }
+        ];
+        
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(coursesData));
+        }
+
+        function loadData() {
+            const data = localStorage.getItem(STORAGE_KEY);
+            if (data) {
+                coursesData = JSON.parse(data);
+                renderAllCourses();
+            }
+        }
+        
+        function renderAllCourses() {
+            coursesContainer.innerHTML = '';
+            const sortedCourseNames = Object.keys(coursesData).sort();
+            sortedCourseNames.forEach(courseName => {
+                const courseData = coursesData[courseName];
+                const courseHTML = createCourseCard(courseName, courseData);
+                coursesContainer.insertAdjacentHTML('beforeend', courseHTML);
+                renderAllPairsForCourse(courseName);
+            });
+        }
+
+        function renderAllPairsForCourse(courseName) {
+            const pairsContainer = document.getElementById(`pairs-container-${courseName}`);
+            pairsContainer.innerHTML = '';
+            const courseData = coursesData[courseName];
+            courseData.pairs.forEach(pair => {
+                const pairHTML = createPairCard(courseName, pair);
+                pairsContainer.insertAdjacentHTML('beforeend', pairHTML);
+                updatePairUI(courseName, pair.id);
+            });
+        }
+
+        function createCourseCard(courseName, courseData) {
+            return `
+                <div id="course-${courseName}" class="course-card bg-white p-6 rounded-xl shadow-lg border-t-4 border-slate-700 fade-in">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <span class="text-sm font-semibold text-gray-500">CURSO</span>
+                            <h2 class="text-3xl font-bold text-slate-800">${courseName}</h2>
+                            <p class="text-xs text-slate-400 mt-1">${courseData.pairs.length} pareja(s) registrada(s)</p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <label class="bg-slate-100 text-slate-700 font-semibold px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors text-sm cursor-pointer no-print">
+                                📄 Carga Excel<input type="file" accept=".xlsx,.xls,.csv" class="hidden excel-upload-input" data-course-name="${courseName}">
+                            </label>
+                            <button class="delete-course-btn text-red-500 hover:text-red-700 font-semibold no-print" data-course-name="${courseName}">Eliminar Curso</button>
+                        </div>
+                    </div>
+                    <div id="pairs-container-${courseName}" class="space-y-4">
+                    </div>
+                    <div class="mt-8 pt-6 border-t border-slate-200 no-print">
+                        <button class="add-pair-btn bg-slate-700 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-800 transition-colors shadow-sm" data-course-name="${courseName}">
+                            + Agregar Pareja a ${courseName}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createPairCard(courseName, pair) {
+            const isOpen = pair.isOpen === true;
+            let availableStudents = [];
+            const courseKey = Object.keys(studentDatabase).find(key => courseName.toUpperCase().includes(key));
+            if (courseKey) {
+                const allStudentsInCourse = studentDatabase[courseKey];
+                const assignedStudents = coursesData[courseName].pairs.flatMap(p => p.members);
+                availableStudents = allStudentsInCourse.filter(s => !assignedStudents.includes(s) || pair.members.includes(s));
+            }
+            // Also include manually added students from course roster
+            if (coursesData[courseName].roster) {
+                const assignedStudents = coursesData[courseName].pairs.flatMap(p => p.members);
+                const rosterAvailable = coursesData[courseName].roster.filter(s => !assignedStudents.includes(s) || pair.members.includes(s));
+                availableStudents = [...new Set([...availableStudents, ...rosterAvailable])];
+            }
+
+            const studentOptions = availableStudents.sort().map(student => `<option value="${student}">${student}</option>`).join('');
+            const studentSelectorHTML = `
+                <div class="flex items-center space-x-2">
+                    <select class="student-select flex-grow border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm">
+                        <option value="">Selecciona un estudiante...</option>
+                        ${studentOptions}
+                    </select>
+                    <button class="add-student-btn bg-slate-200 text-slate-800 font-semibold px-4 py-1.5 rounded-md hover:bg-slate-300 transition-colors text-sm">Agregar</button>
+                    <input type="text" class="manual-student-input border border-slate-300 rounded-md px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-slate-500" placeholder="O escribe nombre...">
+                    <button class="add-manual-student-btn bg-slate-700 text-white font-semibold px-4 py-1.5 rounded-md hover:bg-slate-800 transition-colors text-sm">+</button>
+                </div>`;
+
+            let rubricHTML = '<thead class="bg-slate-50 text-slate-600 text-sm"><tr><th>Criterio</th><th>Insuficiente (1)</th><th>Suficiente (2)</th><th>Bueno (3)</th><th>Excelente (4)</th></tr></thead><tbody>';
+            rubricStructure.forEach(criterion => {
+                rubricHTML += `<tr data-criterion-id="${criterion.id}">
+                    <td class="font-medium text-slate-800">${criterion.name}</td>
+                    <td class="score-cell score-1" data-score="1">${criterion.descriptions[1]}</td>
+                    <td class="score-cell score-2" data-score="2">${criterion.descriptions[2]}</td>
+                    <td class="score-cell score-3" data-score="3">${criterion.descriptions[3]}</td>
+                    <td class="score-cell score-4" data-score="4">${criterion.descriptions[4]}</td>
+                </tr>`;
+            });
+            rubricHTML += `</tbody>`;
+
+            const member1 = pair.members[0] || null;
+            const member2 = pair.members[1] || null;
+            const interviewer = pair.interviewer || member1;
+            const interviewee = pair.interviewee || member2;
+
+            const membersHTML = pair.members.map(name => {
+                const isInterviewer = name === interviewer;
+                const isInterviewee = name === interviewee;
+                const roleBadge = isInterviewer ? '<span class="role-badge role-interviewer ml-2">Entrevistador</span>' : 
+                                  isInterviewee ? '<span class="role-badge role-interviewee ml-2">Entrevistado</span>' : '';
+                return `<li class="flex items-center justify-between py-1">
+                    <div class="flex items-center">
+                        <span>${name}</span>
+                        ${roleBadge}
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button class="set-interviewer-btn text-blue-600 text-xs font-bold hover:underline" data-student-name="${name}" title="Definir como Entrevistador">🎤</button>
+                        <button class="set-interviewee-btn text-amber-600 text-xs font-bold hover:underline" data-student-name="${name}" title="Definir como Entrevistado">💼</button>
+                        <button class="remove-student-btn text-red-500 text-xs font-bold ml-2" data-student-name="${name}">X</button>
+                    </div>
+                </li>`;
+            }).join('');
+
+            return `
+                <div id="pair-${courseName}-${pair.id}" class="pair-card bg-slate-50 p-4 sm:p-6 rounded-lg shadow-md border-l-4 border-slate-700 ${isOpen ? 'is-open' : ''}">
+                    <div class="pair-header-trigger flex justify-between items-center cursor-pointer">
+                        <div class="flex items-center space-x-3">
+                            <span class="header-icon text-slate-500 text-xl font-bold">▶</span>
+                            <h3 class="text-2xl font-bold text-slate-800">Pareja ${pair.number}</h3>
+                            ${pair.members.length === 2 ? `<span class="text-xs text-slate-400 hidden sm:block">${pair.members[0].split(' ').slice(0,2).join(' ')} & ${pair.members[1].split(' ').slice(0,2).join(' ')}</span>` : ''}
+                        </div>
+                        <button class="delete-pair-btn text-red-500 hover:text-red-700 font-semibold z-10 relative no-print" data-pair-id="${pair.id}" data-course-name="${courseName}">Eliminar Pareja</button>
+                    </div>
+                    <div class="collapsible-content pt-4">
+                        <div class="mb-4 bg-blue-50 p-3 rounded-lg text-sm text-blue-800">
+                            <strong>💡 Tip:</strong> Agrega 2 estudiantes, luego usa los botones 🎤 (entrevistador) y 💼 (entrevistado) para asignar roles. Máximo 2 integrantes por pareja.
+                        </div>
+                        <div class="mb-6"><h4 class="font-semibold text-slate-700 mb-2">Integrantes:</h4><ul class="list-none text-slate-600 members-list mb-2 space-y-1">${membersHTML}</ul>${studentSelectorHTML}</div>
+                        <div class="overflow-x-auto"><table class="rubric-table w-full border-collapse">${rubricHTML}</table></div>
+                        <div class="mb-6 mt-6">
+                            <h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4>
+                            <textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="4" placeholder="Escribe aquí la retroalimentación para la pareja...">${pair.feedback || ''}</textarea>
+                        </div>
+                        <div class="mt-6 p-4 bg-white rounded-lg flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 sm:space-x-8">
+                            <button class="download-pdf-btn bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm no-print">Descargar Informe PDF</button>
+                            <div class="flex space-x-8">
+                                <div class="text-center"><p class="text-sm font-medium text-slate-500">PUNTAJE TOTAL</p><p class="total-score text-3xl font-bold text-slate-800">0 / ${rubricStructure.length * 4}</p></div>
+                                <div class="text-center"><p class="text-sm font-medium text-slate-500">NOTA FINAL (60%)</p><p class="final-grade text-3xl font-bold text-blue-600">1.0</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+        
+        function updatePairUI(courseName, pairId) {
+            const pairData = coursesData[courseName].pairs.find(p => p.id == pairId);
+            if (!pairData) return;
+            const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
+
+            pairCard.querySelectorAll('tr[data-criterion-id]').forEach(row => {
+                const criterionId = row.dataset.criterionId;
+                const savedScore = pairData.scores[criterionId];
+                row.querySelectorAll('.score-cell').forEach(cell => {
+                    cell.classList.remove('selected', 'unselected-sibling');
+                    if (savedScore) {
+                        if (parseInt(cell.dataset.score) === savedScore) {
+                            cell.classList.add('selected');
+                        } else {
+                            cell.classList.add('unselected-sibling');
+                        }
+                    }
+                });
+            });
+            calculateResults(courseName, pairId);
+        }
+
+        addCourseBtn.addEventListener('click', () => {
+            const courseName = prompt("Ingresa el nombre del nuevo curso (ej: 4A, 4B, 4C, 4E):");
+            if (courseName && courseName.trim() !== "") {
+                const safeCourseName = courseName.trim().toUpperCase();
+                if (coursesData[safeCourseName]) {
+                    alert("Ya existe un curso con ese nombre."); return;
+                }
+                coursesData[safeCourseName] = { pairs: [], pairCounter: 0, roster: [] };
+                saveData();
+                renderAllCourses();
+            }
+        });
+
+        clearDataBtn.addEventListener('click', () => {
+            if (confirm('¿Estás seguro de que quieres borrar TODOS los cursos y datos? Esta acción no se puede deshacer.')) {
+                localStorage.removeItem(STORAGE_KEY);
+                coursesData = {};
+                renderAllCourses();
+            }
+        });
+
+        // Export
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify(coursesData, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `respaldo_mock_interview_video_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Import
+        document.getElementById('importInput').addEventListener('change', (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (!confirm('¿Importar datos? Se reemplazarán los actuales.')) return;
+                    coursesData = data;
+                    saveData();
+                    renderAllCourses();
+                    alert('Datos importados correctamente.');
+                } catch(err) { alert('Archivo no válido.'); }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+
+        coursesContainer.addEventListener('click', e => {
+            const target = e.target;
+
+            if (target.matches('.add-pair-btn')) {
+                const courseName = target.dataset.courseName;
+                const courseData = coursesData[courseName];
+                courseData.pairCounter++;
+                const newPair = { id: Date.now(), number: courseData.pairCounter, members: [], interviewer: null, interviewee: null, scores: {}, feedback: '', isOpen: true };
+                courseData.pairs.push(newPair);
+                saveData();
+                renderAllPairsForCourse(courseName);
+                document.getElementById(`pair-${courseName}-${newPair.id}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            if (target.matches('.delete-course-btn')) {
+                const courseName = target.dataset.courseName;
+                if (confirm(`¿Estás seguro de que quieres eliminar el curso "${courseName}" y todas sus parejas?`)) {
+                    delete coursesData[courseName];
+                    saveData();
+                    renderAllCourses();
+                }
+            }
+
+            const headerTrigger = target.closest('.pair-header-trigger');
+            if (headerTrigger) {
+                if (target.matches('.delete-pair-btn')) return;
+                const pairCard = headerTrigger.closest('.pair-card');
+                const idParts = pairCard.id.split('-');
+                const courseName = idParts[1];
+                const pairId = idParts[2];
+                const pairData = coursesData[courseName].pairs.find(p => p.id == pairId);
+                pairData.isOpen = !pairData.isOpen;
+                saveData();
+                pairCard.classList.toggle('is-open');
+            }
+
+            const pairCard = target.closest('.pair-card');
+            if (!pairCard) return;
+            
+            const idParts = pairCard.id.split('-');
+            const courseName = idParts[1];
+            const pairId = idParts[2];
+            const pairData = coursesData[courseName].pairs.find(p => p.id == pairId);
+            
+            if (target.matches('.add-student-btn')) {
+                const select = target.previousElementSibling;
+                const studentName = select.value;
+                if (studentName && !pairData.members.includes(studentName)) {
+                    if (pairData.members.length >= 2) {
+                        alert('Una pareja solo puede tener 2 integrantes.'); return;
+                    }
+                    pairData.members.push(studentName);
+                    if (pairData.members.length === 1) pairData.interviewer = studentName;
+                    if (pairData.members.length === 2) pairData.interviewee = studentName;
+                    saveData();
+                    renderAllPairsForCourse(courseName);
+                }
+            }
+
+            if (target.matches('.add-manual-student-btn')) {
+                const input = target.previousElementSibling;
+                const studentName = input.value.trim().toUpperCase();
+                if (studentName && !pairData.members.includes(studentName)) {
+                    if (pairData.members.length >= 2) {
+                        alert('Una pareja solo puede tener 2 integrantes.'); return;
+                    }
+                    pairData.members.push(studentName);
+                    if (!coursesData[courseName].roster) coursesData[courseName].roster = [];
+                    if (!coursesData[courseName].roster.includes(studentName)) {
+                        coursesData[courseName].roster.push(studentName);
+                    }
+                    if (pairData.members.length === 1) pairData.interviewer = studentName;
+                    if (pairData.members.length === 2) pairData.interviewee = studentName;
+                    saveData();
+                    renderAllPairsForCourse(courseName);
+                }
+            }
+
+            if (target.matches('.remove-student-btn')) {
+                const studentNameToRemove = target.dataset.studentName;
+                pairData.members = pairData.members.filter(m => m !== studentNameToRemove);
+                if (pairData.interviewer === studentNameToRemove) pairData.interviewer = pairData.members[0] || null;
+                if (pairData.interviewee === studentNameToRemove) pairData.interviewee = pairData.members[1] || pairData.members[0] || null;
+                saveData();
+                renderAllPairsForCourse(courseName);
+            }
+
+            if (target.matches('.set-interviewer-btn')) {
+                const studentName = target.dataset.studentName;
+                pairData.interviewer = studentName;
+                // Auto-set the other as interviewee
+                const other = pairData.members.find(m => m !== studentName);
+                if (other) pairData.interviewee = other;
+                saveData();
+                renderAllPairsForCourse(courseName);
+            }
+
+            if (target.matches('.set-interviewee-btn')) {
+                const studentName = target.dataset.studentName;
+                pairData.interviewee = studentName;
+                const other = pairData.members.find(m => m !== studentName);
+                if (other) pairData.interviewer = other;
+                saveData();
+                renderAllPairsForCourse(courseName);
+            }
+            
+            if (target.matches('.delete-pair-btn')) {
+                if (confirm(`¿Estás seguro de que quieres eliminar la Pareja ${pairData.number} del curso ${courseName}?`)) {
+                    coursesData[courseName].pairs = coursesData[courseName].pairs.filter(p => p.id != pairId);
+                    saveData();
+                    renderAllPairsForCourse(courseName);
+                }
+            }
+
+            if (target.matches('.score-cell')) {
+                const criterionId = target.closest('tr').dataset.criterionId;
+                const score = parseInt(target.dataset.score);
+                pairData.scores[criterionId] = score;
+                updatePairUI(courseName, pairId);
+                saveData();
+            }
+            
+            if (target.matches('.download-pdf-btn')) {
+                 generatePDF(courseName, pairId);
+            }
+        });
+
+        // Excel upload handler
+        coursesContainer.addEventListener('change', e => {
+            if (e.target.matches('.excel-upload-input')) {
+                const file = e.target.files[0]; if (!file) return;
+                const courseName = e.target.dataset.courseName;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const wb = XLSX.read(ev.target.result, { type: 'array' });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                        if (!coursesData[courseName].roster) coursesData[courseName].roster = [];
+                        let added = 0;
+                        rows.forEach(row => {
+                            const name = (row[0] || '').toString().trim();
+                            if (!name) return;
+                            if (!coursesData[courseName].roster.includes(name)) {
+                                coursesData[courseName].roster.push(name);
+                                added++;
+                            }
+                        });
+                        saveData();
+                        renderAllCourses();
+                        alert(`Se cargaron ${added} estudiantes al roster de ${courseName}.`);
+                    } catch (err) { alert('Error al leer archivo: ' + err.message); }
+                };
+                reader.readAsArrayBuffer(file);
+                e.target.value = '';
+            }
+        });
+        
+        coursesContainer.addEventListener('input', e => {
+            if (e.target.matches('.feedback-textarea')) {
+                const pairCard = e.target.closest('.pair-card');
+                const idParts = pairCard.id.split('-');
+                const courseName = idParts[1];
+                const pairId = idParts[2];
+                const pairData = coursesData[courseName].pairs.find(p => p.id == pairId);
+                pairData.feedback = e.target.value;
+                saveData();
+            }
+        });
+
+        function calculateResults(courseName, pairId) {
+            const pairData = coursesData[courseName].pairs.find(p => p.id == pairId);
+            if (!pairData) return;
+
+            const totalScore = Object.values(pairData.scores).reduce((sum, score) => sum + (score || 0), 0);
+            const maxScore = rubricStructure.length * 4;
+            const finalGrade = calculateGrade(totalScore, maxScore, 0.60);
+
+            const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
+            pairCard.querySelector('.total-score').textContent = `${totalScore} / ${maxScore}`;
+            const gradeEl = pairCard.querySelector('.final-grade');
+            gradeEl.textContent = finalGrade.toFixed(1);
+            gradeEl.className = `final-grade text-3xl font-bold ${finalGrade >= 4.0 ? 'text-blue-600' : 'text-red-600'}`;
+        }
+        
+        function calculateGrade(score, maxScore, exigency) {
+            if (score === null || score === undefined) return 1.0;
+            const passingScore = maxScore * exigency;
+            let grade;
+            if (score >= passingScore) {
+                grade = 4.0 + 3.0 * ((score - passingScore) / (maxScore - passingScore));
+            } else {
+                 if (passingScore === 0) return 7.0;
+                 grade = 1.0 + 3.0 * (score / passingScore);
+            }
+            return Math.max(1.0, Math.min(7.0, grade));
+        };
+
+        async function generatePDF(courseName, pairId) {
+            const doc = new jsPDF();
+            const pairData = coursesData[courseName].pairs.find(p => p.id == pairId);
+            const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
+
+            // Page 1: Header + Info + Chart
+            doc.setFillColor(30, 41, 59);
+            doc.rect(0, 0, 210, 35, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.text("Mock Job Interview — Video", 105, 14, { align: "center" });
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "normal");
+            doc.text("4° Medio — Unidad 1: Professional Profile & Workplace English", 105, 22, { align: "center" });
+            doc.text(`Nota 1 Semestre 1 — Exigencia 60%`, 105, 29, { align: "center" });
+
+            doc.setTextColor(30, 41, 59);
+            let yPos = 45;
+            doc.setFontSize(12);
+            doc.setFont("helvetica", "bold");
+            doc.text("Curso:", 20, yPos);
+            doc.setFont("helvetica", "normal");
+            doc.text(courseName, 50, yPos);
+            yPos += 7;
+            doc.setFont("helvetica", "bold");
+            doc.text("Pareja:", 20, yPos);
+            doc.setFont("helvetica", "normal");
+            doc.text(String(pairData.number), 50, yPos);
+            yPos += 10;
+
+            doc.setFont("helvetica", "bold");
+            doc.text("Integrantes:", 20, yPos);
+            yPos += 7;
+            pairData.members.forEach(member => {
+                const role = member === pairData.interviewer ? " (Entrevistador)" : member === pairData.interviewee ? " (Entrevistado)" : "";
+                doc.setFont("helvetica", "normal");
+                doc.text(`• ${member}${role}`, 25, yPos);
+                yPos += 7;
+            });
+            yPos += 5;
+
+            // Results
+            const totalScore = Object.values(pairData.scores).reduce((sum, score) => sum + (score || 0), 0);
+            const maxScore = rubricStructure.length * 4;
+            const finalGrade = calculateGrade(totalScore, maxScore, 0.60);
+
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text(`Puntaje: ${totalScore} / ${maxScore}`, 20, yPos);
+            doc.text(`Nota Final: ${finalGrade.toFixed(1)}`, 120, yPos);
+            yPos += 15;
+
+            // Radar chart
+            const chartCanvas = document.createElement('canvas');
+            chartCanvas.width = 400;
+            chartCanvas.height = 400;
+            const labels = rubricStructure.map(c => c.name);
+            const data = labels.map(label => {
+                const criterion = rubricStructure.find(c => c.name === label);
+                return pairData.scores[criterion.id] || 0;
+            });
+
+            new Chart(chartCanvas, {
+                type: 'radar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Puntaje Obtenido',
+                        data: data,
+                        fill: true,
+                        backgroundColor: 'rgba(30, 41, 59, 0.15)',
+                        borderColor: 'rgb(30, 41, 59)',
+                        pointBackgroundColor: 'rgb(30, 41, 59)',
+                    }]
+                },
+                options: {
+                    scales: { r: { suggestedMin: 0, suggestedMax: 4, ticks: { stepSize: 1 }}},
+                    plugins: { legend: { display: false } }
+                }
+            });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const chartImage = chartCanvas.toDataURL('image/png');
+            doc.addImage(chartImage, 'PNG', 25, yPos, 160, 80);
+            yPos += 90;
+
+            // Feedback
+            if (yPos > 240) { doc.addPage(); yPos = 20; }
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text("Retroalimentación", 20, yPos);
+            yPos += 8;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(11);
+            const feedbackText = pairData.feedback || "No se ha ingresado retroalimentación.";
+            const splitFeedback = doc.splitTextToSize(feedbackText, 170);
+            doc.text(splitFeedback, 20, yPos);
+            
+            // Page 2: Rubric table
+            doc.addPage();
+            doc.setFillColor(30, 41, 59);
+            doc.rect(0, 0, 210, 20, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text("Detalle de Calificación — Rúbrica", 105, 14, { align: "center" });
+
+            const rubricTable = pairCard.querySelector('.rubric-table');
+            const canvas = await html2canvas(rubricTable, { scale: 2 });
+            const tableImage = canvas.toDataURL('image/png');
+            const imgProps = doc.getImageProperties(tableImage);
+            const pdfWidth = doc.internal.pageSize.getWidth();
+            const imgWidth = pdfWidth - 40;
+            const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+            doc.addImage(tableImage, 'PNG', 20, 30, imgWidth, imgHeight);
+
+            doc.save(`MockInterview_Video_${courseName}_Pareja_${pairData.number}.pdf`);
+        }
+
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>

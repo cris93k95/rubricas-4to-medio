@@ -1,12 +1,12 @@
 /**
  * CV Rubric — Curriculum Vitae en Inglés
  * Frontend logic for the CV evaluation rubric.
- * Uses server API for persistence instead of localStorage.
+ * Uses server API for persistence.
  */
 
 const { jsPDF } = window.jspdf;
 const coursesContainer = document.getElementById('coursesContainer');
-const TOOL = 'cv';
+const TOOL = 'shared';
 
 let coursesData = {};
 let saveTimer = null;
@@ -44,6 +44,7 @@ async function loadData() {
     try {
         coursesData = await api(`/api/state/${TOOL}`);
         if (!coursesData || !coursesData.courses) coursesData = { courses: {} };
+        if (!coursesData.courses && coursesData) coursesData = { courses: coursesData };
         renderAllCourses();
     } catch (err) {
         console.error('Error loading:', err);
@@ -81,62 +82,73 @@ function renderAllCourses() {
     sortedCourseNames.forEach(courseName => {
         const courseHTML = createCourseCard(courseName, courses[courseName]);
         coursesContainer.insertAdjacentHTML('beforeend', courseHTML);
-        renderAllStudentsForCourse(courseName);
+        renderAllPairsForCourse(courseName);
     });
 }
 
-function renderAllStudentsForCourse(courseName) {
-    const studentsContainer = document.getElementById(`students-container-${courseName}`);
-    if (!studentsContainer) return;
-    studentsContainer.innerHTML = '';
+function renderAllPairsForCourse(courseName) {
+    const pairsContainer = document.getElementById(`pairs-container-${courseName}`);
+    if (!pairsContainer) return;
+    pairsContainer.innerHTML = '';
     const courseData = coursesData.courses[courseName];
-    (courseData.students || []).forEach(student => {
-        const studentHTML = createStudentCard(courseName, student);
-        studentsContainer.insertAdjacentHTML('beforeend', studentHTML);
-        updateStudentUI(courseName, student.id);
+    (courseData.pairs || []).forEach(pair => {
+        const pairHTML = createPairCard(courseName, pair);
+        pairsContainer.insertAdjacentHTML('beforeend', pairHTML);
+        updatePairUI(courseName, pair.id);
     });
 }
 
 function createCourseCard(courseName, courseData) {
+    const isOpen = courseData.isOpen !== false;
     return `
-        <div id="course-${courseName}" class="course-card bg-white p-6 rounded-xl shadow-lg border-t-4 border-teal-600 fade-in">
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <span class="text-sm font-semibold text-gray-500">CURSO</span>
-                    <h2 class="text-3xl font-bold text-slate-800">${courseName}</h2>
-                    <p class="text-xs text-slate-400 mt-1">${(courseData.students || []).length} estudiante(s)</p>
-                </div>
+        <div id="course-${courseName}" class="course-card bg-white p-6 rounded-xl shadow-lg border-t-4 border-teal-600 fade-in ${isOpen ? 'is-open' : ''}">
+            <div class="course-header-trigger flex justify-between items-center mb-6 cursor-pointer hover:bg-slate-50 p-2 -m-2 rounded-lg transition-colors">
                 <div class="flex items-center space-x-3">
-                    <label class="bg-slate-100 text-slate-700 font-semibold px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors text-sm cursor-pointer no-print">
-                        📄 Carga Excel<input type="file" accept=".xlsx,.xls,.csv" class="hidden excel-upload-input" data-course-name="${courseName}">
-                    </label>
-                    <button class="delete-course-btn text-red-500 hover:text-red-700 font-semibold no-print" data-course-name="${courseName}">Eliminar Curso</button>
+                    <span class="header-icon text-slate-500 text-2xl font-bold">▶</span>
+                    <div>
+                        <span class="text-sm font-semibold text-gray-500">CURSO</span>
+                        <h2 class="text-3xl font-bold text-slate-800">${courseName}</h2>
+                        <p class="text-xs text-slate-400 mt-1">${(courseData.pairs || []).length} pareja(s) importada(s) desde Video</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3 z-10" onclick="event.stopPropagation()">
+                    <!-- Se removió la agregar curso y la carga de excel, esto es manejado en Video -->
                 </div>
             </div>
-            <div class="mb-6 p-4 bg-teal-50 rounded-lg no-print">
-                <h4 class="font-semibold text-teal-700 mb-2">Agregar Estudiante:</h4>
-                <div class="flex items-center space-x-2">
-                    <input type="text" class="add-student-name-input flex-grow border border-teal-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm" placeholder="Nombre completo del estudiante..." data-course-name="${courseName}">
-                    <button class="add-student-btn bg-teal-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-teal-700 transition-colors text-sm" data-course-name="${courseName}">+ Agregar</button>
+            
+            <div class="collapsible-content">
+                <div id="pairs-container-${courseName}" class="space-y-4"></div>
+                
+                <div class="mt-8 p-4 bg-teal-50 rounded-lg border border-teal-200 no-print flex justify-between items-center">
+                    <div class="text-sm text-teal-800">
+                        <strong>Nota:</strong> Las parejas se gestionan en la pestaña <strong>Mock Interview (Video)</strong>. 
+                        Los cambios realizados allí se reflejarán aquí automáticamente.
+                    </div>
                 </div>
-            </div>
-            <div id="students-container-${courseName}" class="space-y-4"></div>
-            <div class="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div class="flex flex-wrap gap-6 items-center justify-between">
-                    <div class="text-sm text-slate-600"><span class="font-semibold">Total evaluados:</span> <span class="course-evaluated-count font-bold text-slate-800">0</span></div>
-                    <div class="text-sm text-slate-600"><span class="font-semibold">Promedio curso:</span> <span class="course-avg-grade font-bold text-teal-700">-</span></div>
-                    <div class="text-sm text-slate-600"><span class="font-semibold">Aprobación:</span> <span class="course-pass-rate font-bold text-emerald-700">-</span></div>
+
+                <div class="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div class="flex flex-wrap gap-6 items-center justify-between">
+                        <div class="text-sm text-slate-600"><span class="font-semibold">Total evaluados (CV):</span> <span class="course-evaluated-count font-bold text-slate-800">0</span></div>
+                        <div class="text-sm text-slate-600"><span class="font-semibold">Promedio curso:</span> <span class="course-avg-grade font-bold text-teal-700">-</span></div>
+                        <div class="text-sm text-slate-600"><span class="font-semibold">Aprobación:</span> <span class="course-pass-rate font-bold text-emerald-700">-</span></div>
+                    </div>
                 </div>
             </div>
         </div>`;
 }
 
-function createStudentCard(courseName, student) {
-    const isOpen = student.isOpen === true;
-    const hasScores = Object.keys(student.scores || {}).length > 0;
+function createPairCard(courseName, pair) {
+    const isOpen = pair.isOpen === true;
+    const hasScores = Object.keys(pair.cv_scores || {}).length > 0;
     const statusBadge = hasScores ?
         '<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">✓ Evaluado</span>' :
         '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold">Pendiente</span>';
+
+    const membersHTML = pair.members.map(name => {
+        return `<li class="flex items-center justify-between py-1">
+            <div class="flex items-center"><span class="font-medium">${name}</span></div>
+        </li>`;
+    }).join('');
 
     let rubricHTML = '<thead class="bg-teal-50 text-teal-700 text-sm"><tr><th>Criterio</th><th>Insuficiente (1)</th><th>Suficiente (2)</th><th>Bueno (3)</th><th>Excelente (4)</th></tr></thead><tbody>';
     rubricStructure.forEach(c => {
@@ -145,22 +157,23 @@ function createStudentCard(courseName, student) {
     rubricHTML += '</tbody>';
 
     return `
-        <div id="student-${courseName}-${student.id}" class="student-card bg-slate-50 p-4 sm:p-6 rounded-lg shadow-md border-l-4 border-teal-500 ${isOpen ? 'is-open' : ''}">
-            <div class="student-header-trigger flex justify-between items-center cursor-pointer">
+        <div id="pair-${courseName}-${pair.id}" class="pair-card bg-slate-50 p-4 sm:p-6 rounded-lg shadow-md border-l-4 border-teal-500 ${isOpen ? 'is-open' : ''}">
+            <div class="pair-header-trigger flex justify-between items-center cursor-pointer">
                 <div class="flex items-center space-x-3">
                     <span class="header-icon text-slate-500 text-xl font-bold">▶</span>
-                    <h3 class="text-lg sm:text-xl font-bold text-slate-800">${student.name}</h3>
+                    <h3 class="text-xl font-bold text-slate-800">Pareja ${pair.number}</h3>
+                    ${pair.members.length > 0 ? `<span class="text-xs text-slate-500 hidden sm:block">${pair.members.join(' & ')}</span>` : ''}
                     ${statusBadge}
                 </div>
-                <button class="delete-student-btn text-red-500 hover:text-red-700 font-semibold z-10 relative no-print" data-student-id="${student.id}" data-course-name="${courseName}">Eliminar</button>
             </div>
             <div class="collapsible-content pt-4">
+                <div class="mb-6"><h4 class="font-semibold text-slate-700 mb-2">Integrantes del CV:</h4><ul class="list-none text-slate-700 members-list mb-2 space-y-1">${membersHTML}</ul></div>
                 <div class="overflow-x-auto"><table class="rubric-table w-full border-collapse">${rubricHTML}</table></div>
-                <div class="mb-6 mt-6"><h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4><textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="3" placeholder="Escribe aquí la retroalimentación...">${student.feedback || ''}</textarea></div>
+                <div class="mb-6 mt-6"><h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4><textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="3" placeholder="Escribe aquí la retroalimentación para la pareja...">${pair.cv_feedback || ''}</textarea></div>
                 <div class="mt-6 p-4 bg-white rounded-lg flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 sm:space-x-8">
-                    <button class="download-pdf-btn bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm no-print">Descargar Informe PDF</button>
+                    <button class="download-pdf-btn bg-teal-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-teal-700 transition-colors shadow-sm no-print">Descargar Informe PDF</button>
                     <div class="flex space-x-8">
-                        <div class="text-center"><p class="text-sm font-medium text-slate-500">PUNTAJE TOTAL</p><p class="total-score text-3xl font-bold text-slate-800">0 / ${rubricStructure.length * 4}</p></div>
+                        <div class="text-center"><p class="text-sm font-medium text-slate-500">PUNTAJE CV</p><p class="total-score text-3xl font-bold text-slate-800">0 / ${rubricStructure.length * 4}</p></div>
                         <div class="text-center"><p class="text-sm font-medium text-slate-500">NOTA FINAL (60%)</p><p class="final-grade text-3xl font-bold text-teal-600">1.0</p></div>
                     </div>
                 </div>
@@ -168,15 +181,15 @@ function createStudentCard(courseName, student) {
         </div>`;
 }
 
-function updateStudentUI(courseName, studentId) {
-    const studentData = (coursesData.courses[courseName]?.students || []).find(s => s.id == studentId);
-    if (!studentData) return;
-    const studentCard = document.getElementById(`student-${courseName}-${studentId}`);
-    if (!studentCard) return;
+function updatePairUI(courseName, pairId) {
+    const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
+    if (!pairData) return;
+    const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
+    if (!pairCard) return;
 
-    studentCard.querySelectorAll('tr[data-criterion-id]').forEach(row => {
+    pairCard.querySelectorAll('tr[data-criterion-id]').forEach(row => {
         const criterionId = row.dataset.criterionId;
-        const savedScore = (studentData.scores || {})[criterionId];
+        const savedScore = (pairData.cv_scores || {})[criterionId];
         row.querySelectorAll('.score-cell').forEach(cell => {
             cell.classList.remove('selected', 'unselected-sibling');
             if (savedScore) {
@@ -185,7 +198,7 @@ function updateStudentUI(courseName, studentId) {
             }
         });
     });
-    calculateResults(courseName, studentId);
+    calculateResults(courseName, pairId);
     updateCourseSummary(courseName);
 }
 
@@ -195,9 +208,9 @@ function updateCourseSummary(courseName) {
     if (!courseCard || !courseData) return;
 
     let totalGrades = 0, gradeSum = 0, passCount = 0;
-    (courseData.students || []).forEach(student => {
-        if (Object.keys(student.scores || {}).length > 0) {
-            const totalScore = Object.values(student.scores).reduce((sum, s) => sum + (s || 0), 0);
+    (courseData.pairs || []).forEach(pair => {
+        if (Object.keys(pair.cv_scores || {}).length > 0) {
+            const totalScore = Object.values(pair.cv_scores).reduce((sum, s) => sum + (s || 0), 0);
             const grade = calculateGrade(totalScore, rubricStructure.length * 4, 0.60);
             totalGrades++;
             gradeSum += grade;
@@ -221,163 +234,92 @@ function calculateGrade(score, maxScore, exigency) {
     return Math.max(1.0, Math.min(7.0, grade));
 }
 
-function calculateResults(courseName, studentId) {
-    const studentData = (coursesData.courses[courseName]?.students || []).find(s => s.id == studentId);
-    if (!studentData) return;
-    const totalScore = Object.values(studentData.scores || {}).reduce((sum, s) => sum + (s || 0), 0);
+function calculateResults(courseName, pairId) {
+    const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
+    if (!pairData) return;
+    const totalScore = Object.values(pairData.cv_scores || {}).reduce((sum, s) => sum + (s || 0), 0);
     const maxScore = rubricStructure.length * 4;
     const finalGrade = calculateGrade(totalScore, maxScore, 0.60);
-    const studentCard = document.getElementById(`student-${courseName}-${studentId}`);
-    if (!studentCard) return;
-    studentCard.querySelector('.total-score').textContent = `${totalScore} / ${maxScore}`;
-    const gradeEl = studentCard.querySelector('.final-grade');
+    const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
+    if (!pairCard) return;
+    pairCard.querySelector('.total-score').textContent = `${totalScore} / ${maxScore}`;
+    const gradeEl = pairCard.querySelector('.final-grade');
     gradeEl.textContent = finalGrade.toFixed(1);
     gradeEl.className = `final-grade text-3xl font-bold ${finalGrade >= 4.0 ? 'text-teal-600' : 'text-red-600'}`;
 }
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────
 
-document.getElementById('addCourseBtn').addEventListener('click', () => {
-    const courseName = prompt("Ingresa el nombre del nuevo curso (ej: 4A, 4B, 4C, 4E):");
-    if (courseName && courseName.trim() !== "") {
-        const safeCourseName = courseName.trim().toUpperCase();
-        if (!coursesData.courses) coursesData.courses = {};
-        if (coursesData.courses[safeCourseName]) { alert("Ya existe ese curso."); return; }
-        coursesData.courses[safeCourseName] = { students: [], studentCounter: 0 };
-        saveData();
-        renderAllCourses();
-    }
-});
-
 document.getElementById('exportBtn').addEventListener('click', () => {
     window.open('/api/export', '_blank');
-});
-
-document.getElementById('importInput').addEventListener('change', (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    if (!confirm('¿Importar datos? Se reemplazarán los actuales.')) { e.target.value = ''; return; }
-    const fd = new FormData();
-    fd.append('file', file);
-    api('/api/import', { method: 'POST', body: fd }).then(() => {
-        alert('Datos importados correctamente.');
-        loadData();
-    }).catch(err => alert('Error: ' + err.message));
-    e.target.value = '';
 });
 
 coursesContainer.addEventListener('click', e => {
     const target = e.target;
 
-    if (target.matches('.add-student-btn')) {
-        const courseName = target.dataset.courseName;
-        const input = target.previousElementSibling;
-        const studentName = input.value.trim().toUpperCase();
-        if (!studentName) { alert('Ingresa un nombre.'); return; }
-        const courseData = coursesData.courses[courseName];
-        if ((courseData.students || []).find(s => s.name === studentName)) { alert('Estudiante ya existe.'); return; }
-        courseData.studentCounter = (courseData.studentCounter || 0) + 1;
-        if (!courseData.students) courseData.students = [];
-        const newStudent = { id: Date.now(), name: studentName, scores: {}, feedback: '', isOpen: true };
-        courseData.students.push(newStudent);
-        courseData.students.sort((a, b) => a.name.localeCompare(b.name));
-        input.value = '';
-        saveData();
-        renderAllStudentsForCourse(courseName);
-        updateCourseSummary(courseName);
-        document.getElementById(`student-${courseName}-${newStudent.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    if (target.matches('.delete-course-btn')) {
-        const courseName = target.dataset.courseName;
-        if (confirm(`¿Eliminar "${courseName}" y todos sus estudiantes?`)) {
-            delete coursesData.courses[courseName];
-            saveData();
-            renderAllCourses();
+    const courseHeaderTrigger = target.closest('.course-header-trigger');
+    if (courseHeaderTrigger) {
+        if (!target.closest('.delete-course-btn') && !target.closest('.excel-upload-input')) {
+            const courseCard = courseHeaderTrigger.closest('.course-card');
+            const courseName = courseCard.id.replace('course-', '');
+            const courseData = coursesData.courses[courseName];
+            if (courseData) { 
+                courseData.isOpen = courseData.isOpen === false ? true : false; 
+                saveData(); 
+                courseCard.classList.toggle('is-open'); 
+            }
         }
+        return;
     }
 
-    const headerTrigger = target.closest('.student-header-trigger');
+    const headerTrigger = target.closest('.pair-header-trigger');
     if (headerTrigger) {
-        if (target.matches('.delete-student-btn')) { /* handled below */ } else {
-            const studentCard = headerTrigger.closest('.student-card');
-            const idParts = studentCard.id.split('-');
-            const courseName = idParts[1];
-            const studentId = idParts[2];
-            const studentData = (coursesData.courses[courseName]?.students || []).find(s => s.id == studentId);
-            if (studentData) { studentData.isOpen = !studentData.isOpen; saveData(); studentCard.classList.toggle('is-open'); }
+        if (target.matches('.delete-pair-btn')) { /* handled below */ } else {
+            const pairCard = headerTrigger.closest('.pair-card');
+            const [, courseName, pairId] = pairCard.id.split('-');
+            const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
+            if (pairData) { pairData.isOpen = !pairData.isOpen; saveData(); pairCard.classList.toggle('is-open'); }
         }
+        return;
     }
 
-    const studentCard = target.closest('.student-card');
-    if (!studentCard) return;
-    const idParts = studentCard.id.split('-');
+    const pairCard = target.closest('.pair-card');
+    if (!pairCard) return;
+    const idParts = pairCard.id.split('-');
     const courseName = idParts[1];
-    const studentId = idParts[2];
-    const studentData = (coursesData.courses[courseName]?.students || []).find(s => s.id == studentId);
-    if (!studentData) return;
-
-    if (target.matches('.delete-student-btn')) {
-        if (confirm(`¿Eliminar a ${studentData.name}?`)) {
-            coursesData.courses[courseName].students = coursesData.courses[courseName].students.filter(s => s.id != studentId);
-            saveData();
-            renderAllStudentsForCourse(courseName);
-            updateCourseSummary(courseName);
-        }
-    }
+    const pairId = idParts[2];
+    const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
+    if (!pairData) return;
 
     if (target.matches('.score-cell')) {
         const criterionId = target.closest('tr').dataset.criterionId;
-        if (!studentData.scores) studentData.scores = {};
-        studentData.scores[criterionId] = parseInt(target.dataset.score);
-        updateStudentUI(courseName, studentId);
+        if (!pairData.cv_scores) pairData.cv_scores = {};
+        pairData.cv_scores[criterionId] = parseInt(target.dataset.score);
+        updatePairUI(courseName, pairId);
         saveData();
     }
 
     if (target.matches('.download-pdf-btn')) {
-        generatePDF(courseName, studentId);
-    }
-});
-
-// Enter key on student input
-coursesContainer.addEventListener('keydown', e => {
-    if (e.target.matches('.add-student-name-input') && e.key === 'Enter') {
-        e.target.nextElementSibling.click();
-    }
-});
-
-// Excel upload
-coursesContainer.addEventListener('change', e => {
-    if (e.target.matches('.excel-upload-input')) {
-        const file = e.target.files[0]; if (!file) return;
-        const courseName = e.target.dataset.courseName;
-        const fd = new FormData();
-        fd.append('file', file);
-        api(`/api/cv/upload-excel/${encodeURIComponent(courseName)}`, { method: 'POST', body: fd })
-            .then(res => {
-                alert(`Se cargaron ${res.added} estudiantes a ${courseName}.`);
-                loadData();
-            })
-            .catch(err => alert('Error: ' + err.message));
-        e.target.value = '';
+        generatePDF(courseName, pairId);
     }
 });
 
 // Feedback
 coursesContainer.addEventListener('input', e => {
     if (e.target.matches('.feedback-textarea')) {
-        const studentCard = e.target.closest('.student-card');
-        const [, courseName, studentId] = studentCard.id.split('-');
-        const studentData = (coursesData.courses[courseName]?.students || []).find(s => s.id == studentId);
-        if (studentData) { studentData.feedback = e.target.value; saveData(); }
+        const pairCard = e.target.closest('.pair-card');
+        const [, courseName, pairId] = pairCard.id.split('-');
+        const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
+        if (pairData) { pairData.cv_feedback = e.target.value; saveData(); }
     }
 });
 
 // ─── PDF Generation ──────────────────────────────────────────────────────────
 
-async function generatePDF(courseName, studentId) {
+async function generatePDF(courseName, pairId) {
     const doc = new jsPDF();
-    const studentData = (coursesData.courses[courseName]?.students || []).find(s => s.id == studentId);
-    const studentCard = document.getElementById(`student-${courseName}-${studentId}`);
+    const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
+    const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
 
     doc.setFillColor(15, 118, 110);
     doc.rect(0, 0, 210, 35, 'F');
@@ -386,17 +328,17 @@ async function generatePDF(courseName, studentId) {
     doc.text("Curriculum Vitae en Inglés — Evaluación", 105, 14, { align: "center" });
     doc.setFontSize(10); doc.setFont("helvetica", "normal");
     doc.text("4° Medio — Unidad 1: Professional Profile & Workplace English", 105, 22, { align: "center" });
-    doc.text("Evaluación Individual — Exigencia 60%", 105, 29, { align: "center" });
+    doc.text("Evaluación Grupal — Exigencia 60%", 105, 29, { align: "center" });
 
     doc.setTextColor(30, 41, 59);
     let yPos = 45;
     doc.setFontSize(12); doc.setFont("helvetica", "bold");
     doc.text("Curso:", 20, yPos); doc.setFont("helvetica", "normal"); doc.text(courseName, 50, yPos);
     yPos += 7;
-    doc.setFont("helvetica", "bold"); doc.text("Estudiante:", 20, yPos); doc.setFont("helvetica", "normal"); doc.text(studentData.name, 50, yPos);
+    doc.setFont("helvetica", "bold"); doc.text("Pareja:", 20, yPos); doc.setFont("helvetica", "normal"); doc.text(String(pairData.number) + " (" + pairData.members.join(" y ") + ")", 50, yPos);
     yPos += 15;
 
-    const totalScore = Object.values(studentData.scores || {}).reduce((sum, s) => sum + (s || 0), 0);
+    const totalScore = Object.values(pairData.cv_scores || {}).reduce((sum, s) => sum + (s || 0), 0);
     const maxScore = rubricStructure.length * 4;
     const finalGrade = calculateGrade(totalScore, maxScore, 0.60);
     doc.setFontSize(14); doc.setFont("helvetica", "bold");
@@ -406,7 +348,7 @@ async function generatePDF(courseName, studentId) {
 
     const chartCanvas = document.createElement('canvas');
     chartCanvas.width = 400; chartCanvas.height = 400;
-    const data = rubricStructure.map(c => (studentData.scores || {})[c.id] || 0);
+    const data = rubricStructure.map(c => (pairData.cv_scores || {})[c.id] || 0);
     new Chart(chartCanvas, {
         type: 'radar',
         data: { labels: rubricStructure.map(c => c.name), datasets: [{ label: 'Puntaje', data, fill: true, backgroundColor: 'rgba(15,118,110,0.15)', borderColor: 'rgb(15,118,110)', pointBackgroundColor: 'rgb(15,118,110)' }] },
@@ -421,16 +363,16 @@ async function generatePDF(courseName, studentId) {
     doc.text("Retroalimentación", 20, yPos);
     yPos += 8;
     doc.setFont("helvetica", "normal"); doc.setFontSize(11);
-    doc.text(doc.splitTextToSize(studentData.feedback || "No se ha ingresado retroalimentación.", 170), 20, yPos);
+    doc.text(doc.splitTextToSize(pairData.cv_feedback || "No se ha ingresado retroalimentación.", 170), 20, yPos);
 
     doc.addPage();
     doc.setFillColor(15, 118, 110); doc.rect(0, 0, 210, 20, 'F');
     doc.setTextColor(255, 255, 255); doc.setFontSize(14); doc.setFont("helvetica", "bold");
     doc.text("Detalle de Calificación — Rúbrica", 105, 14, { align: "center" });
-    const canvas = await html2canvas(studentCard.querySelector('.rubric-table'), { scale: 2 });
+    const canvas = await html2canvas(pairCard.querySelector('.rubric-table'), { scale: 2 });
     const imgW = 170, imgH = (canvas.height * imgW) / canvas.width;
     doc.addImage(canvas.toDataURL('image/png'), 'PNG', 20, 30, imgW, imgH);
-    doc.save(`CV_Evaluation_${courseName}_${studentData.name.replace(/\s+/g, '_').slice(0, 30)}.pdf`);
+    doc.save(`CV_Evaluation_${courseName}_Pareja_${pairData.number}.pdf`);
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────

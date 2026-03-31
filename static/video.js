@@ -6,7 +6,7 @@
 
 const { jsPDF } = window.jspdf;
 const coursesContainer = document.getElementById('coursesContainer');
-const TOOL = 'video';
+const TOOL = 'shared';
 
 let coursesData = {};
 let saveTimer = null;
@@ -67,7 +67,8 @@ const rubricStructure = [
     { id: 'c4', name: 'Content & Coherence of Responses', descriptions: { 1: 'Las respuestas son incoherentes, irrelevantes o limitadas a "sí/no". No responden lo que se pregunta.', 2: 'Las respuestas son breves y poco desarrolladas. Se intentan responder las preguntas pero falta profundidad y conexión.', 3: 'Las respuestas son coherentes, relevantes y están desarrolladas. Se conectan con la experiencia y metas profesionales del estudiante.', 4: 'Las respuestas son excelentes: coherentes, bien desarrolladas, persuasivas y demuestran reflexión sobre metas profesionales. Destacan por su calidad y autenticidad.' }},
     { id: 'c5', name: 'Interviewer Performance', descriptions: { 1: 'El entrevistador no cumple su rol: solo lee preguntas sin interacción, o las preguntas son incoherentes.', 2: 'El entrevistador lee las preguntas con poca naturalidad. No hay repreguntas ni interacción real. Se siente forzado.', 3: 'El entrevistador hace las preguntas con naturalidad y claridad. Incluye al menos 1 repregunta o comentario espontáneo. Buen manejo del rol.', 4: 'El entrevistador es excelente: formula preguntas claras, reacciona a las respuestas, hace repreguntas pertinentes y mantiene un tono profesional creíble durante toda la entrevista.' }},
     { id: 'c6', name: 'Video Production Quality', descriptions: { 1: 'Video inaudible o inentendible. Calidad de imagen/sonido inaceptable. Sin edición mínima.', 2: 'Calidad de video deficiente: problemas de audio, imagen o iluminación que dificultan la comprensión. Se percibe poco esfuerzo en la producción.', 3: 'Buena calidad de video: audio claro, imagen estable, iluminación adecuada. Se nota un esfuerzo de producción apropiado.', 4: 'Excelente calidad de producción: audio cristalino, imagen cuidada, buena iluminación, ambientación profesional. La producción eleva la calidad del trabajo significativamente.' }},
-    { id: 'c7', name: 'Puntualidad en la Entrega', descriptions: { 1: 'Entregado con 3 o más clases de retraso.', 2: 'Entregado con 2 clases de retraso.', 3: 'Entregado con 1 clase de retraso.', 4: 'Entregado en la fecha y hora acordada.' }}
+    { id: 'c7', name: 'Creativity & Originality', descriptions: { 1: 'No hay esfuerzo creativo o los elementos intentados restan profesionalismo al trabajo de una manera inapropiada.', 2: 'El video cumple con lo básico, pero carece de elementos creativos atractivos o de originalidad. Presentación plana.', 3: 'El video incluye algunos elementos creativos que suman a la presentación (ej. buena elección de fondo, detalles de utilería).', 4: 'Muestra un alto nivel de creatividad, originalidad o detalles únicos (ej. edición creativa, ambientación muy realista, vestuario) que aportan al contexto profesional sin restar seriedad.' }},
+    { id: 'c8', name: 'Puntualidad en la Entrega', descriptions: { 1: 'Entregado con 3 o más clases de retraso.', 2: 'Entregado con 2 clases de retraso.', 3: 'Entregado con 1 clase de retraso.', 4: 'Entregado en la fecha y hora acordada.' }}
 ];
 
 // ─── Toggle Instructions ─────────────────────────────────────────────────────
@@ -105,24 +106,30 @@ function renderAllPairsForCourse(courseName) {
 }
 
 function createCourseCard(courseName, courseData) {
+    const isOpen = courseData.isOpen !== false; // Default to true if undefined
     return `
-        <div id="course-${courseName}" class="course-card bg-white p-6 rounded-xl shadow-lg border-t-4 border-slate-700 fade-in">
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <span class="text-sm font-semibold text-gray-500">CURSO</span>
-                    <h2 class="text-3xl font-bold text-slate-800">${courseName}</h2>
-                    <p class="text-xs text-slate-400 mt-1">${(courseData.pairs || []).length} pareja(s) registrada(s)</p>
-                </div>
+        <div id="course-${courseName}" class="course-card bg-white p-6 rounded-xl shadow-lg border-t-4 border-slate-700 fade-in ${isOpen ? 'is-open' : ''}">
+            <div class="course-header-trigger flex justify-between items-center mb-6 cursor-pointer hover:bg-slate-50 p-2 -m-2 rounded-lg transition-colors">
                 <div class="flex items-center space-x-3">
+                    <span class="header-icon text-slate-500 text-2xl font-bold">▶</span>
+                    <div>
+                        <span class="text-sm font-semibold text-gray-500">CURSO</span>
+                        <h2 class="text-3xl font-bold text-slate-800">${courseName}</h2>
+                        <p class="text-xs text-slate-400 mt-1">${(courseData.pairs || []).length} pareja(s) registrada(s)</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3 z-10" onclick="event.stopPropagation()">
                     <label class="bg-slate-100 text-slate-700 font-semibold px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors text-sm cursor-pointer no-print">
                         📄 Carga Excel<input type="file" accept=".xlsx,.xls,.csv" class="hidden excel-upload-input" data-course-name="${courseName}">
                     </label>
                     <button class="delete-course-btn text-red-500 hover:text-red-700 font-semibold no-print" data-course-name="${courseName}">Eliminar Curso</button>
                 </div>
             </div>
-            <div id="pairs-container-${courseName}" class="space-y-4"></div>
-            <div class="mt-8 pt-6 border-t border-slate-200 no-print">
-                <button class="add-pair-btn bg-slate-700 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-800 transition-colors shadow-sm" data-course-name="${courseName}">+ Agregar Pareja a ${courseName}</button>
+            <div class="collapsible-content">
+                <div id="pairs-container-${courseName}" class="space-y-4"></div>
+                <div class="mt-8 pt-6 border-t border-slate-200 no-print">
+                    <button class="add-pair-btn bg-slate-700 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-800 transition-colors shadow-sm" data-course-name="${courseName}">+ Agregar Pareja a ${courseName}</button>
+                </div>
             </div>
         </div>`;
 }
@@ -178,7 +185,7 @@ function createPairCard(courseName, pair) {
                     <button class="add-manual-student-btn bg-slate-700 text-white font-semibold px-4 py-1.5 rounded-md hover:bg-slate-800 transition-colors text-sm">+</button>
                 </div></div>
                 <div class="overflow-x-auto"><table class="rubric-table w-full border-collapse">${rubricHTML}</table></div>
-                <div class="mb-6 mt-6"><h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4><textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="4" placeholder="Escribe aquí la retroalimentación para la pareja...">${pair.feedback || ''}</textarea></div>
+                <div class="mb-6 mt-6"><h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4><textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="4" placeholder="Escribe aquí la retroalimentación para la pareja...">${pair.video_feedback || ''}</textarea></div>
                 <div class="mt-6 p-4 bg-white rounded-lg flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 sm:space-x-8">
                     <button class="download-pdf-btn bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm no-print">Descargar Informe PDF</button>
                     <div class="flex space-x-8">
@@ -198,7 +205,7 @@ function updatePairUI(courseName, pairId) {
 
     pairCard.querySelectorAll('tr[data-criterion-id]').forEach(row => {
         const criterionId = row.dataset.criterionId;
-        const savedScore = pairData.scores[criterionId];
+        const savedScore = (pairData.video_scores || {})[criterionId];
         row.querySelectorAll('.score-cell').forEach(cell => {
             cell.classList.remove('selected', 'unselected-sibling');
             if (savedScore) {
@@ -228,7 +235,7 @@ function calculateGrade(score, maxScore, exigency) {
 function calculateResults(courseName, pairId) {
     const pairData = (coursesData.courses[courseName].pairs || []).find(p => p.id == pairId);
     if (!pairData) return;
-    const totalScore = Object.values(pairData.scores).reduce((sum, s) => sum + (s || 0), 0);
+    const totalScore = Object.values(pairData.video_scores || {}).reduce((sum, s) => sum + (s || 0), 0);
     const maxScore = rubricStructure.length * 4;
     const finalGrade = calculateGrade(totalScore, maxScore, 0.60);
     const pairCard = document.getElementById(`pair-${courseName}-${pairId}`);
@@ -247,7 +254,7 @@ document.getElementById('addCourseBtn').addEventListener('click', () => {
         const safeCourseName = courseName.trim().toUpperCase();
         if (!coursesData.courses) coursesData.courses = {};
         if (coursesData.courses[safeCourseName]) { alert("Ya existe un curso con ese nombre."); return; }
-        coursesData.courses[safeCourseName] = { pairs: [], pairCounter: 0, roster: [] };
+        coursesData.courses[safeCourseName] = { pairs: [], pairCounter: 0, roster: [], isOpen: true };
         saveData();
         renderAllCourses();
     }
@@ -276,7 +283,7 @@ coursesContainer.addEventListener('click', e => {
         const courseName = target.dataset.courseName;
         const courseData = coursesData.courses[courseName];
         courseData.pairCounter = (courseData.pairCounter || 0) + 1;
-        const newPair = { id: Date.now(), number: courseData.pairCounter, members: [], interviewer: null, interviewee: null, scores: {}, feedback: '', isOpen: true };
+        const newPair = { id: Date.now(), number: courseData.pairCounter, members: [], interviewer: null, interviewee: null, video_scores: {}, video_feedback: '', cv_scores: {}, cv_feedback: '', isOpen: true };
         if (!courseData.pairs) courseData.pairs = [];
         courseData.pairs.push(newPair);
         saveData();
@@ -291,6 +298,21 @@ coursesContainer.addEventListener('click', e => {
             saveData();
             renderAllCourses();
         }
+    }
+
+    const courseHeaderTrigger = target.closest('.course-header-trigger');
+    if (courseHeaderTrigger) {
+        if (!target.closest('.delete-course-btn') && !target.closest('.excel-upload-input')) {
+            const courseCard = courseHeaderTrigger.closest('.course-card');
+            const courseName = courseCard.id.replace('course-', '');
+            const courseData = coursesData.courses[courseName];
+            if (courseData) { 
+                courseData.isOpen = courseData.isOpen === false ? true : false; 
+                saveData(); 
+                courseCard.classList.toggle('is-open'); 
+            }
+        }
+        return;
     }
 
     const headerTrigger = target.closest('.pair-header-trigger');
@@ -367,7 +389,8 @@ coursesContainer.addEventListener('click', e => {
 
     if (target.matches('.score-cell')) {
         const criterionId = target.closest('tr').dataset.criterionId;
-        pairData.scores[criterionId] = parseInt(target.dataset.score);
+        if (!pairData.video_scores) pairData.video_scores = {};
+        pairData.video_scores[criterionId] = parseInt(target.dataset.score);
         updatePairUI(courseName, pairId);
         saveData();
     }
@@ -384,7 +407,7 @@ coursesContainer.addEventListener('change', e => {
         const courseName = e.target.dataset.courseName;
         const fd = new FormData();
         fd.append('file', file);
-        api(`/api/video/upload-excel/${encodeURIComponent(courseName)}`, { method: 'POST', body: fd })
+        api(`/api/shared/upload-excel/${encodeURIComponent(courseName)}`, { method: 'POST', body: fd })
             .then(res => {
                 alert(`Se cargaron ${res.added} estudiantes al roster de ${courseName}.`);
                 loadData();
@@ -400,7 +423,7 @@ coursesContainer.addEventListener('input', e => {
         const pairCard = e.target.closest('.pair-card');
         const [, courseName, pairId] = pairCard.id.split('-');
         const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
-        if (pairData) { pairData.feedback = e.target.value; saveData(); }
+        if (pairData) { pairData.video_feedback = e.target.value; saveData(); }
     }
 });
 
@@ -446,7 +469,7 @@ async function generatePDF(courseName, pairId) {
     });
     yPos += 5;
 
-    const totalScore = Object.values(pairData.scores).reduce((sum, s) => sum + (s || 0), 0);
+    const totalScore = Object.values(pairData.video_scores || {}).reduce((sum, s) => sum + (s || 0), 0);
     const maxScore = rubricStructure.length * 4;
     const finalGrade = calculateGrade(totalScore, maxScore, 0.60);
     doc.setFontSize(14);
@@ -457,7 +480,7 @@ async function generatePDF(courseName, pairId) {
 
     const chartCanvas = document.createElement('canvas');
     chartCanvas.width = 400; chartCanvas.height = 400;
-    const data = rubricStructure.map(c => pairData.scores[c.id] || 0);
+    const data = rubricStructure.map(c => (pairData.video_scores || {})[c.id] || 0);
     new Chart(chartCanvas, {
         type: 'radar',
         data: { labels: rubricStructure.map(c => c.name), datasets: [{ label: 'Puntaje', data, fill: true, backgroundColor: 'rgba(30,41,59,0.15)', borderColor: 'rgb(30,41,59)', pointBackgroundColor: 'rgb(30,41,59)' }] },
@@ -472,7 +495,7 @@ async function generatePDF(courseName, pairId) {
     doc.text("Retroalimentación", 20, yPos);
     yPos += 8;
     doc.setFont("helvetica", "normal"); doc.setFontSize(11);
-    doc.text(doc.splitTextToSize(pairData.feedback || "No se ha ingresado retroalimentación.", 170), 20, yPos);
+    doc.text(doc.splitTextToSize(pairData.video_feedback || "No se ha ingresado retroalimentación.", 170), 20, yPos);
 
     doc.addPage();
     doc.setFillColor(30, 41, 59); doc.rect(0, 0, 210, 20, 'F');

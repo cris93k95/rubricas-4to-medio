@@ -31,7 +31,7 @@ GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configura
 ADMIN_EMAIL = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
 ADMIN_NAME = (os.getenv("ADMIN_NAME") or "Administrador").strip()
 
-VALID_TOOLS = {"video", "cv"}
+VALID_TOOLS = {"video", "cv", "shared"}
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -365,12 +365,12 @@ def api_upload_excel(tool: str, course_name: str):
         wb = load_workbook(filename=io.BytesIO(file.read()), data_only=True)
         ws = wb[wb.sheetnames[0]]
         names = []
-        for row in ws.iter_rows(min_row=1, max_col=1):
-            value = row[0].value
-            if value is not None:
-                n = str(value).strip()
-                if n:
-                    names.append(n)
+        for row in ws.iter_rows(min_row=1, max_col=3):
+            values = [str(cell.value).strip() for cell in row if cell.value is not None]
+            # Ignore headers and numbers
+            name_parts = [v for v in values if v and not v.isdigit() and len(v) > 1 and v.lower() not in ('nombre', 'apellido', 'nombres', 'apellidos', 'alumno', 'alumnos', 'estudiante', 'estudiantes')]
+            if name_parts:
+                names.append(" ".join(name_parts))
     except Exception as e:
         return jsonify({"error": f"Error al leer archivo: {e}"}), 400
 
@@ -383,7 +383,7 @@ def api_upload_excel(tool: str, course_name: str):
             return jsonify({"error": "Curso no encontrado"}), 404
 
         added = 0
-        if tool == "video":
+        if tool == "shared" or tool == "video":
             # Add to roster
             roster = courses[course_name].get("roster", [])
             for n in names:
@@ -391,21 +391,6 @@ def api_upload_excel(tool: str, course_name: str):
                     roster.append(n)
                     added += 1
             courses[course_name]["roster"] = roster
-        elif tool == "cv":
-            # Add as students
-            existing = {s.get("name") for s in courses[course_name].get("students", [])}
-            import time
-            for n in names:
-                if n not in existing:
-                    courses[course_name]["students"].append({
-                        "id": int(time.time() * 1000) + added,
-                        "name": n,
-                        "scores": {},
-                        "feedback": "",
-                        "isOpen": False
-                    })
-                    existing.add(n)
-                    added += 1
 
         state["courses"] = courses
         save_state(int(user["id"]), tool, state)

@@ -7,9 +7,32 @@
 const { jsPDF } = window.jspdf;
 const coursesContainer = document.getElementById('coursesContainer');
 const TOOL = 'shared';
+const STATE_SOURCE = 'cv';
 
 let coursesData = {};
 let saveTimer = null;
+
+function formatHeaderMemberName(name) {
+    return String(name || '').trim().split(/\s+/).slice(0, 2).join(' ');
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function buildHeaderMemberSummary(members, textClass = 'text-slate-500') {
+    if (!Array.isArray(members) || members.length === 0) return '';
+    const separator = members.length === 2 ? ' &amp; ' : ' • ';
+    const summary = members
+        .map(member => escapeHtml(formatHeaderMemberName(member)))
+        .join(separator);
+    return `<span class="text-xs ${textClass} leading-tight whitespace-normal break-words">${summary}</span>`;
+}
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
@@ -33,7 +56,11 @@ function saveData() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
         try {
-            await api(`/api/state/${TOOL}`, { method: 'PUT', body: JSON.stringify(coursesData) });
+            await api(`/api/state/${TOOL}`, {
+                method: 'PUT',
+                headers: { 'X-Rubrica-Source': STATE_SOURCE },
+                body: JSON.stringify(coursesData)
+            });
         } catch (err) {
             console.error('Error saving:', err);
         }
@@ -140,6 +167,7 @@ function createCourseCard(courseName, courseData) {
 function createPairCard(courseName, pair) {
     const isOpen = pair.isOpen === true;
     const hasScores = Object.keys(pair.cv_scores || {}).length > 0;
+    const memberSummary = buildHeaderMemberSummary(pair.members);
     const statusBadge = hasScores ?
         '<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">✓ Evaluado</span>' :
         '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold">Pendiente</span>';
@@ -159,10 +187,10 @@ function createPairCard(courseName, pair) {
     return `
         <div id="pair-${courseName}-${pair.id}" class="pair-card bg-slate-50 p-4 sm:p-6 rounded-lg shadow-md border-l-4 border-teal-500 ${isOpen ? 'is-open' : ''}">
             <div class="pair-header-trigger flex justify-between items-center cursor-pointer">
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center gap-x-3 gap-y-1 flex-wrap">
                     <span class="header-icon text-slate-500 text-xl font-bold">▶</span>
                     <h3 class="text-xl font-bold text-slate-800">Pareja ${pair.number}</h3>
-                    ${pair.members.length > 0 ? `<span class="text-xs text-slate-500 hidden sm:block">${pair.members.join(' & ')}</span>` : ''}
+                    ${memberSummary}
                     ${statusBadge}
                 </div>
             </div>

@@ -7,9 +7,32 @@
 const { jsPDF } = window.jspdf;
 const coursesContainer = document.getElementById('coursesContainer');
 const TOOL = 'shared';
+const STATE_SOURCE = 'video';
 
 let coursesData = {};
 let saveTimer = null;
+
+function formatHeaderMemberName(name) {
+    return String(name || '').trim().split(/\s+/).slice(0, 2).join(' ');
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function buildHeaderMemberSummary(members, textClass = 'text-slate-400') {
+    if (!Array.isArray(members) || members.length === 0) return '';
+    const separator = members.length === 2 ? ' &amp; ' : ' • ';
+    const summary = members
+        .map(member => escapeHtml(formatHeaderMemberName(member)))
+        .join(separator);
+    return `<span class="text-xs ${textClass} leading-tight whitespace-normal break-words">${summary}</span>`;
+}
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
@@ -33,7 +56,11 @@ function saveData() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
         try {
-            await api(`/api/state/${TOOL}`, { method: 'PUT', body: JSON.stringify(coursesData) });
+            await api(`/api/state/${TOOL}`, {
+                method: 'PUT',
+                headers: { 'X-Rubrica-Source': STATE_SOURCE },
+                body: JSON.stringify(coursesData)
+            });
         } catch (err) {
             console.error('Error saving:', err);
         }
@@ -136,6 +163,7 @@ function createCourseCard(courseName, courseData) {
 
 function createPairCard(courseName, pair) {
     const isOpen = pair.isOpen === true;
+    const memberSummary = buildHeaderMemberSummary(pair.members);
     let availableStudents = [];
     const courseData = coursesData.courses[courseName];
     if (courseData.roster) {
@@ -168,10 +196,10 @@ function createPairCard(courseName, pair) {
     return `
         <div id="pair-${courseName}-${pair.id}" class="pair-card bg-slate-50 p-4 sm:p-6 rounded-lg shadow-md border-l-4 border-slate-700 ${isOpen ? 'is-open' : ''}">
             <div class="pair-header-trigger flex justify-between items-center cursor-pointer">
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center gap-x-3 gap-y-1 flex-wrap">
                     <span class="header-icon text-slate-500 text-xl font-bold">▶</span>
                     <h3 class="text-2xl font-bold text-slate-800">Pareja ${pair.number}</h3>
-                    ${pair.members.length === 2 ? `<span class="text-xs text-slate-400 hidden sm:block">${pair.members[0].split(' ').slice(0,2).join(' ')} & ${pair.members[1].split(' ').slice(0,2).join(' ')}</span>` : ''}
+                    ${memberSummary}
                 </div>
                 <button class="delete-pair-btn text-red-500 hover:text-red-700 font-semibold z-10 relative no-print" data-pair-id="${pair.id}" data-course-name="${courseName}">Eliminar Pareja</button>
             </div>

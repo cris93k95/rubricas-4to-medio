@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import threading
+from copy import deepcopy
 from functools import wraps
 from pathlib import Path
 
@@ -152,6 +153,123 @@ def save_state(user_id: int, tool: str, state: dict) -> None:
                 ON CONFLICT (user_id, tool)
                 DO UPDATE SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP
             """), {"uid": user_id, "tool": tool, "data": payload})
+
+
+def pair_index(pair: dict | None) -> str | None:
+    if not isinstance(pair, dict):
+        return None
+    pair_id = pair.get("id")
+    if pair_id is None:
+        return None
+    return str(pair_id)
+
+
+def merge_shared_pair(existing_pair: dict | None, incoming_pair: dict | None, source: str) -> dict:
+    if not isinstance(existing_pair, dict):
+        return deepcopy(incoming_pair) if isinstance(incoming_pair, dict) else {}
+    if not isinstance(incoming_pair, dict):
+        return deepcopy(existing_pair)
+
+    if source == "video":
+        merged = deepcopy(existing_pair)
+        for key, value in incoming_pair.items():
+            if key in {"cv_scores", "cv_feedback"}:
+                continue
+            merged[key] = deepcopy(value)
+        return merged
+
+    if source == "cv":
+        merged = deepcopy(existing_pair)
+        for key in ("cv_scores", "cv_feedback", "isOpen"):
+            if key in incoming_pair:
+                merged[key] = deepcopy(incoming_pair[key])
+        return merged
+
+    merged = deepcopy(existing_pair)
+    for key, value in incoming_pair.items():
+        merged[key] = deepcopy(value)
+    return merged
+
+
+def merge_shared_course(existing_course: dict | None, incoming_course: dict | None, source: str) -> dict:
+    if not isinstance(existing_course, dict):
+        return deepcopy(incoming_course) if isinstance(incoming_course, dict) else {}
+    if not isinstance(incoming_course, dict):
+        return deepcopy(existing_course)
+
+    if source == "video":
+        merged = deepcopy(existing_course)
+        for key, value in incoming_course.items():
+            if key == "pairs":
+                continue
+            merged[key] = deepcopy(value)
+
+        existing_pairs = {
+            pair_index(pair): pair
+            for pair in existing_course.get("pairs", [])
+            if pair_index(pair) is not None
+        }
+        merged["pairs"] = []
+        for incoming_pair in incoming_course.get("pairs", []):
+            incoming_key = pair_index(incoming_pair)
+            if incoming_key in existing_pairs:
+                merged["pairs"].append(merge_shared_pair(existing_pairs[incoming_key], incoming_pair, source))
+            else:
+                merged["pairs"].append(deepcopy(incoming_pair))
+        return merged
+
+    if source == "cv":
+        merged = deepcopy(existing_course)
+        if "isOpen" in incoming_course:
+            merged["isOpen"] = deepcopy(incoming_course["isOpen"])
+
+        existing_pairs = existing_course.get("pairs", [])
+        incoming_pairs = {
+            pair_index(pair): pair
+            for pair in incoming_course.get("pairs", [])
+            if pair_index(pair) is not None
+        }
+
+        if not existing_pairs:
+            merged["pairs"] = [deepcopy(pair) for pair in incoming_course.get("pairs", [])]
+            return merged
+
+        merged_pairs = []
+        for existing_pair in existing_pairs:
+            existing_key = pair_index(existing_pair)
+            if existing_key is not None and existing_key in incoming_pairs:
+                merged_pairs.append(merge_shared_pair(existing_pair, incoming_pairs[existing_key], source))
+            else:
+                merged_pairs.append(deepcopy(existing_pair))
+        merged["pairs"] = merged_pairs
+        return merged
+
+    merged = deepcopy(existing_course)
+    for key, value in incoming_course.items():
+        merged[key] = deepcopy(value)
+    return merged
+
+
+def merge_shared_state(current_state: dict | None, incoming_state: dict | None, source: str) -> dict:
+    current_courses = current_state.get("courses", {}) if isinstance(current_state, dict) else {}
+    incoming_courses = incoming_state.get("courses", {}) if isinstance(incoming_state, dict) else {}
+
+    if source == "video":
+        merged_courses = {}
+        for course_name, incoming_course in incoming_courses.items():
+            merged_courses[course_name] = merge_shared_course(current_courses.get(course_name), incoming_course, source)
+        return {"courses": merged_courses}
+
+    if source == "cv":
+        merged_courses = {course_name: deepcopy(course_state) for course_name, course_state in current_courses.items()}
+        for course_name, incoming_course in incoming_courses.items():
+            if course_name in current_courses:
+                merged_courses[course_name] = merge_shared_course(current_courses[course_name], incoming_course, source)
+            else:
+                merged_courses[course_name] = deepcopy(incoming_course)
+        return {"courses": merged_courses}
+
+    return deepcopy(incoming_state) if isinstance(incoming_state, dict) else default_state()
 
 
 # ─── Auth Helpers ─────────────────────────────────────────────────────────────
@@ -344,7 +462,11 @@ def api_save_state(tool: str):
         return jsonify({"error": "Herramienta no válida"}), 400
     user = get_current_user()
     payload = request.get_json(force=True)
+    source = (request.headers.get("X-Rubrica-Source") or "").strip().lower()
     with lock:
+        if tool == "shared" and source in {"video", "cv"}:
+            current_state = load_state(int(user["id"]), tool)
+            payload = merge_shared_state(current_state, payload, source)
         save_state(int(user["id"]), tool, payload)
     return jsonify({"ok": True})
 

@@ -34,6 +34,18 @@ function buildHeaderMemberSummary(members, textClass = 'text-slate-500') {
     return `<span class="text-xs ${textClass} leading-tight whitespace-normal break-words">${summary}</span>`;
 }
 
+function getFirstOtherMember(members, excludedName) {
+    return (members || []).find(name => name !== excludedName) || null;
+}
+
+function syncInterviewRoles(pair) {
+    if (!pair || !Array.isArray(pair.members)) return;
+    if (!pair.members.includes(pair.interviewer)) pair.interviewer = null;
+    if (!pair.members.includes(pair.interviewee) || pair.interviewee === pair.interviewer) pair.interviewee = null;
+    if (!pair.interviewer) pair.interviewer = pair.members[0] || null;
+    if (!pair.interviewee) pair.interviewee = getFirstOtherMember(pair.members, pair.interviewer);
+}
+
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
 async function api(url, opts = {}) {
@@ -135,11 +147,11 @@ function createCourseCard(courseName, courseData) {
                     <div>
                         <span class="text-sm font-semibold text-gray-500">CURSO</span>
                         <h2 class="text-3xl font-bold text-slate-800">${courseName}</h2>
-                        <p class="text-xs text-slate-400 mt-1">${(courseData.pairs || []).length} pareja(s) importada(s) desde Video</p>
+                        <p class="text-xs text-slate-400 mt-1">${(courseData.pairs || []).length} grupo(s) registrados</p>
                     </div>
                 </div>
                 <div class="flex items-center space-x-3 z-10" onclick="event.stopPropagation()">
-                    <!-- Se removió la agregar curso y la carga de excel, esto es manejado en Video -->
+                    <button class="add-pair-btn bg-teal-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-teal-700 transition-colors shadow-sm no-print" data-course-name="${courseName}">+ Agregar Grupo</button>
                 </div>
             </div>
             
@@ -148,8 +160,8 @@ function createCourseCard(courseName, courseData) {
                 
                 <div class="mt-8 p-4 bg-teal-50 rounded-lg border border-teal-200 no-print flex justify-between items-center">
                     <div class="text-sm text-teal-800">
-                        <strong>Nota:</strong> Las parejas se gestionan en la pestaña <strong>Mock Interview (Video)</strong>. 
-                        Los cambios realizados allí se reflejarán aquí automáticamente.
+                        <strong>Nota:</strong> Puedes gestionar los grupos aquí o en <strong>Mock Interview (Video)</strong>.
+                        Los cambios se sincronizan automáticamente entre ambas pautas.
                     </div>
                 </div>
 
@@ -168,13 +180,25 @@ function createPairCard(courseName, pair) {
     const isOpen = pair.isOpen === true;
     const hasScores = Object.keys(pair.cv_scores || {}).length > 0;
     const memberSummary = buildHeaderMemberSummary(pair.members);
+    syncInterviewRoles(pair);
     const statusBadge = hasScores ?
         '<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">✓ Evaluado</span>' :
         '<span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold">Pendiente</span>';
 
+    const courseData = coursesData.courses[courseName] || {};
+    const assignedStudents = (courseData.pairs || []).flatMap(group => group.members || []);
+    const availableStudents = (courseData.roster || []).filter(student => !assignedStudents.includes(student) || pair.members.includes(student)).sort();
+    const studentOptions = availableStudents.map(student => `<option value="${student}">${student}</option>`).join('');
+
     const membersHTML = pair.members.map(name => {
+        const roleBadge = name === pair.interviewer
+            ? '<span class="role-badge role-interviewer ml-2">Entrevistador</span>'
+            : name === pair.interviewee
+                ? '<span class="role-badge role-interviewee ml-2">Entrevistado</span>'
+                : '';
         return `<li class="flex items-center justify-between py-1">
-            <div class="flex items-center"><span class="font-medium">${name}</span></div>
+            <div class="flex items-center"><span class="font-medium">${name}</span>${roleBadge}</div>
+            <button class="remove-student-btn text-red-500 text-xs font-bold ml-2" data-student-name="${name}">X</button>
         </li>`;
     }).join('');
 
@@ -189,15 +213,23 @@ function createPairCard(courseName, pair) {
             <div class="pair-header-trigger flex justify-between items-center cursor-pointer">
                 <div class="flex items-center gap-x-3 gap-y-1 flex-wrap">
                     <span class="header-icon text-slate-500 text-xl font-bold">▶</span>
-                    <h3 class="text-xl font-bold text-slate-800">Pareja ${pair.number}</h3>
+                    <h3 class="text-xl font-bold text-slate-800">Grupo ${pair.number}</h3>
                     ${memberSummary}
                     ${statusBadge}
                 </div>
+                <button class="delete-pair-btn text-red-500 hover:text-red-700 font-semibold z-10 relative no-print" data-pair-id="${pair.id}" data-course-name="${courseName}">Eliminar Grupo</button>
             </div>
             <div class="collapsible-content pt-4">
-                <div class="mb-6"><h4 class="font-semibold text-slate-700 mb-2">Integrantes del CV:</h4><ul class="list-none text-slate-700 members-list mb-2 space-y-1">${membersHTML}</ul></div>
+                <div class="mb-4 bg-teal-50 p-3 rounded-lg text-sm text-teal-800"><strong>💡 Tip:</strong> Puedes crear y ajustar el grupo aquí. La misma agrupación se reflejará en la pauta de video.</div>
+                <div class="mb-6"><h4 class="font-semibold text-slate-700 mb-2">Integrantes del CV:</h4><ul class="list-none text-slate-700 members-list mb-2 space-y-1">${membersHTML}</ul>
+                <div class="flex items-center space-x-2">
+                    <select class="student-select flex-grow border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"><option value="">Selecciona un estudiante...</option>${studentOptions}</select>
+                    <button class="add-student-btn bg-slate-200 text-slate-800 font-semibold px-4 py-1.5 rounded-md hover:bg-slate-300 transition-colors text-sm">Agregar</button>
+                    <input type="text" class="manual-student-input border border-slate-300 rounded-md px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="O escribe nombre...">
+                    <button class="add-manual-student-btn bg-teal-600 text-white font-semibold px-4 py-1.5 rounded-md hover:bg-teal-700 transition-colors text-sm">+</button>
+                </div></div>
                 <div class="overflow-x-auto"><table class="rubric-table w-full border-collapse">${rubricHTML}</table></div>
-                <div class="mb-6 mt-6"><h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4><textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="3" placeholder="Escribe aquí la retroalimentación para la pareja...">${pair.cv_feedback || ''}</textarea></div>
+                <div class="mb-6 mt-6"><h4 class="font-semibold text-slate-700 mb-2">Retroalimentación:</h4><textarea class="feedback-textarea w-full border border-slate-300 rounded-md p-2" rows="3" placeholder="Escribe aquí la retroalimentación para el grupo...">${pair.cv_feedback || ''}</textarea></div>
                 <div class="mt-6 p-4 bg-white rounded-lg flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 sm:space-x-8">
                     <button class="download-pdf-btn bg-teal-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-teal-700 transition-colors shadow-sm no-print">Descargar Informe PDF</button>
                     <div class="flex space-x-8">
@@ -285,6 +317,21 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 coursesContainer.addEventListener('click', e => {
     const target = e.target;
 
+    if (target.matches('.add-pair-btn')) {
+        const courseName = target.dataset.courseName;
+        const courseData = coursesData.courses[courseName];
+        if (!courseData) return;
+        courseData.pairCounter = (courseData.pairCounter || 0) + 1;
+        const newPair = { id: Date.now(), number: courseData.pairCounter, members: [], interviewer: null, interviewee: null, video_scores: {}, video_feedback: '', cv_scores: {}, cv_feedback: '', isOpen: true };
+        if (!courseData.pairs) courseData.pairs = [];
+        courseData.pairs.push(newPair);
+        saveData();
+        renderAllPairsForCourse(courseName);
+        updateCourseSummary(courseName);
+        document.getElementById(`pair-${courseName}-${newPair.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+
     const courseHeaderTrigger = target.closest('.course-header-trigger');
     if (courseHeaderTrigger) {
         if (!target.closest('.delete-course-btn') && !target.closest('.excel-upload-input')) {
@@ -318,6 +365,50 @@ coursesContainer.addEventListener('click', e => {
     const pairId = idParts[2];
     const pairData = (coursesData.courses[courseName]?.pairs || []).find(p => p.id == pairId);
     if (!pairData) return;
+
+    if (target.matches('.delete-pair-btn')) {
+        if (confirm(`¿Eliminar el Grupo ${pairData.number}?`)) {
+            coursesData.courses[courseName].pairs = coursesData.courses[courseName].pairs.filter(p => p.id != pairId);
+            saveData();
+            renderAllPairsForCourse(courseName);
+            updateCourseSummary(courseName);
+        }
+        return;
+    }
+
+    if (target.matches('.add-student-btn')) {
+        const select = pairCard.querySelector('.student-select');
+        const studentName = select?.value;
+        if (studentName && !pairData.members.includes(studentName)) {
+            pairData.members.push(studentName);
+            syncInterviewRoles(pairData);
+            saveData();
+            renderAllPairsForCourse(courseName);
+        }
+        return;
+    }
+
+    if (target.matches('.add-manual-student-btn')) {
+        const input = pairCard.querySelector('.manual-student-input');
+        const studentName = input?.value.trim().toUpperCase();
+        if (studentName && !pairData.members.includes(studentName)) {
+            pairData.members.push(studentName);
+            if (!coursesData.courses[courseName].roster) coursesData.courses[courseName].roster = [];
+            if (!coursesData.courses[courseName].roster.includes(studentName)) coursesData.courses[courseName].roster.push(studentName);
+            syncInterviewRoles(pairData);
+            saveData();
+            renderAllPairsForCourse(courseName);
+        }
+        return;
+    }
+
+    if (target.matches('.remove-student-btn')) {
+        pairData.members = pairData.members.filter(member => member !== target.dataset.studentName);
+        syncInterviewRoles(pairData);
+        saveData();
+        renderAllPairsForCourse(courseName);
+        return;
+    }
 
     if (target.matches('.score-cell')) {
         const criterionId = target.closest('tr').dataset.criterionId;
@@ -363,7 +454,7 @@ async function generatePDF(courseName, pairId) {
     doc.setFontSize(12); doc.setFont("helvetica", "bold");
     doc.text("Curso:", 20, yPos); doc.setFont("helvetica", "normal"); doc.text(courseName, 50, yPos);
     yPos += 7;
-    doc.setFont("helvetica", "bold"); doc.text("Pareja:", 20, yPos); doc.setFont("helvetica", "normal"); doc.text(String(pairData.number) + " (" + pairData.members.join(" y ") + ")", 50, yPos);
+    doc.setFont("helvetica", "bold"); doc.text("Grupo:", 20, yPos); doc.setFont("helvetica", "normal"); doc.text(String(pairData.number) + " (" + pairData.members.join(", ") + ")", 50, yPos);
     yPos += 15;
 
     const totalScore = Object.values(pairData.cv_scores || {}).reduce((sum, s) => sum + (s || 0), 0);
@@ -400,7 +491,7 @@ async function generatePDF(courseName, pairId) {
     const canvas = await html2canvas(pairCard.querySelector('.rubric-table'), { scale: 2 });
     const imgW = 170, imgH = (canvas.height * imgW) / canvas.width;
     doc.addImage(canvas.toDataURL('image/png'), 'PNG', 20, 30, imgW, imgH);
-    doc.save(`CV_Evaluation_${courseName}_Pareja_${pairData.number}.pdf`);
+    doc.save(`CV_Evaluation_${courseName}_Grupo_${pairData.number}.pdf`);
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────

@@ -180,9 +180,10 @@ def merge_shared_pair(existing_pair: dict | None, incoming_pair: dict | None, so
 
     if source == "cv":
         merged = deepcopy(existing_pair)
-        for key in ("cv_scores", "cv_feedback", "isOpen"):
-            if key in incoming_pair:
-                merged[key] = deepcopy(incoming_pair[key])
+        for key, value in incoming_pair.items():
+            if key in {"video_scores", "video_feedback"}:
+                continue
+            merged[key] = deepcopy(value)
         return merged
 
     merged = deepcopy(existing_pair)
@@ -220,28 +221,23 @@ def merge_shared_course(existing_course: dict | None, incoming_course: dict | No
 
     if source == "cv":
         merged = deepcopy(existing_course)
-        if "isOpen" in incoming_course:
-            merged["isOpen"] = deepcopy(incoming_course["isOpen"])
+        for key, value in incoming_course.items():
+            if key == "pairs":
+                continue
+            merged[key] = deepcopy(value)
 
-        existing_pairs = existing_course.get("pairs", [])
-        incoming_pairs = {
+        existing_pairs = {
             pair_index(pair): pair
-            for pair in incoming_course.get("pairs", [])
+            for pair in existing_course.get("pairs", [])
             if pair_index(pair) is not None
         }
-
-        if not existing_pairs:
-            merged["pairs"] = [deepcopy(pair) for pair in incoming_course.get("pairs", [])]
-            return merged
-
-        merged_pairs = []
-        for existing_pair in existing_pairs:
-            existing_key = pair_index(existing_pair)
-            if existing_key is not None and existing_key in incoming_pairs:
-                merged_pairs.append(merge_shared_pair(existing_pair, incoming_pairs[existing_key], source))
+        merged["pairs"] = []
+        for incoming_pair in incoming_course.get("pairs", []):
+            incoming_key = pair_index(incoming_pair)
+            if incoming_key in existing_pairs:
+                merged["pairs"].append(merge_shared_pair(existing_pairs[incoming_key], incoming_pair, source))
             else:
-                merged_pairs.append(deepcopy(existing_pair))
-        merged["pairs"] = merged_pairs
+                merged["pairs"].append(deepcopy(incoming_pair))
         return merged
 
     merged = deepcopy(existing_course)
